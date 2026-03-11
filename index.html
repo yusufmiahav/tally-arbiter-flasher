@@ -1210,8 +1210,23 @@ function setMonitorBadge(text, type) {
 
 async function monitorConnect() {
   try {
-    monitorPort = await navigator.serial.requestPort();
-    const baud = parseInt(document.getElementById('monitor-baud').value);
+    // Get all previously granted ports first — avoids re-prompting if already granted
+    const ports = await navigator.serial.getPorts();
+    const baud  = parseInt(document.getElementById('monitor-baud').value);
+
+    // Pick a port: prefer one not already used by the flasher, else ask
+    let candidate = ports.find(p => p !== serialPort) || null;
+    if (!candidate) {
+      monitorLog('// Select your ESP32 serial port in the browser dialog...\n');
+      candidate = await navigator.serial.requestPort();
+    }
+
+    monitorPort = candidate;
+
+    // If port is open (e.g. leftover state), close it first
+    try { await monitorPort.close(); } catch(_) {}
+    await new Promise(r => setTimeout(r, 200));
+
     await monitorPort.open({ baudRate: baud });
 
     monitorActive = true;
@@ -1219,9 +1234,9 @@ async function monitorConnect() {
     document.getElementById('btn-monitor-connect').disabled = true;
     document.getElementById('btn-monitor-disconnect').disabled = false;
     document.getElementById('monitor-baud').disabled = true;
-    monitorLog('\n// Connected at ' + baud + ' baud. Press EN/RST on your ESP32.\n\n');
+    monitorLog('// Connected at ' + baud + ' baud — press EN/RST on your ESP32 to see output.\n\n');
 
-    // Read loop
+    // Continuous read loop
     monitorReader = monitorPort.readable.getReader();
     const decoder = new TextDecoder();
     while (monitorActive) {
@@ -1233,9 +1248,9 @@ async function monitorConnect() {
     }
   } catch(e) {
     if (e.name !== 'NotFoundError') {
-      monitorLog('\n// Error: ' + e.message + '\n');
+      monitorLog('// Error: ' + e.message + '\n');
     }
-    monitorDisconnect();
+    await monitorDisconnect();
   }
 }
 
