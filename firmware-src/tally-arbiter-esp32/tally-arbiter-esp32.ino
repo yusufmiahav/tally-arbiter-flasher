@@ -479,21 +479,12 @@ void setup() {
   // If no config has been flashed yet, wait briefly for the
   // web flasher to send settings before proceeding
   if (networkSSID.length() == 0) {
-    addLog("No WiFi config. Waiting for CFG packet (8s)...");
-    setLEDs(false, true); // green = waiting
-    unsigned long cfgWait = millis();
-    while (millis() - cfgWait < 8000) {
-      checkSerialConfig();
-      delay(50);
-    }
-    setLEDs(false, false);
-    if (networkSSID.length() == 0) {
-      addLog("No config received. Halting — use web flasher or serial to configure.");
-      // Blink both LEDs forever to indicate unconfigured state
-      while (true) {
-        setLEDs(true, false); delay(500);
-        setLEDs(false, true); delay(500);
-      }
+    addLog("No WiFi config. Waiting for CFG packet...");
+    // Keep blinking and listening forever until config arrives
+    while (networkSSID.length() == 0) {
+      setLEDs(true, false); delay(300);
+      setLEDs(false, true); delay(300);
+      checkSerialConfig(); // this reboots automatically after saving
     }
   }
 
