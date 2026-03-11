@@ -6,7 +6,7 @@ on:
     paths:
       - 'firmware-src/**'
       - '.github/workflows/build.yml'
-  workflow_dispatch:  # allow manual trigger from GitHub UI
+  workflow_dispatch:
 
 jobs:
   build:
@@ -15,8 +15,6 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
-        env:
-          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
       - name: Set up Arduino CLI
         uses: arduino/setup-arduino-cli@v2
@@ -33,7 +31,6 @@ jobs:
         run: |
           arduino-cli lib install "WebSockets@2.4.1"
           arduino-cli lib install "ArduinoJson@6.21.3"
-          arduino-cli lib install "SocketIOclient@0.0.6"
 
       - name: Build firmware
         run: |
@@ -45,9 +42,9 @@ jobs:
       - name: Copy binaries to firmware folder
         run: |
           mkdir -p firmware
-          cp build/tally-arbiter-esp32.ino.bin          firmware/tally-arbiter-esp32.bin
-          cp build/tally-arbiter-esp32.ino.bootloader.bin firmware/bootloader.bin
-          cp build/tally-arbiter-esp32.ino.partitions.bin firmware/partitions.bin
+          cp build/tally-arbiter-esp32.ino.bin             firmware/tally-arbiter-esp32.ino.bin
+          cp build/tally-arbiter-esp32.ino.bootloader.bin  firmware/tally-arbiter-esp32.ino.bootloader.bin
+          cp build/tally-arbiter-esp32.ino.partitions.bin  firmware/tally-arbiter-esp32.ino.partitions.bin
 
       - name: Commit firmware binaries
         uses: stefanzweifel/git-auto-commit-action@v5
