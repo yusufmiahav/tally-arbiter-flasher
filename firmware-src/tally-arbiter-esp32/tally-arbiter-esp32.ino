@@ -40,6 +40,7 @@ bool mode_program     = false;
 bool networkConnected = false;
 bool socketConnected  = false;
 bool pendingRegister  = false;
+bool socketPaused     = false; // paused while user edits settings in web UI
 
 int pinRed   = RED_PIN;
 int pinGreen = GREEN_PIN;
@@ -317,6 +318,7 @@ void connectToNetwork() {
 void connectToServer() {
   addLog("Connecting to TA: " + tallyarbiter_host + ":" + String(tallyarbiter_port));
   socket.onEvent(socket_event);
+  socket.setReconnectInterval(10000); // retry every 10s instead of hammering
   socket.begin(tallyarbiter_host.c_str(), tallyarbiter_port);
 }
 
@@ -337,6 +339,8 @@ void handleRoot() {
        ".row{display:flex;gap:.5rem}"
        "button{margin-top:1rem;width:100%;background:#ff2d2d;color:#fff;border:none;border-radius:3px;font-family:monospace;font-size:.85rem;padding:.65rem;cursor:pointer;text-transform:uppercase}"
        "button:hover{background:#c02020}"
+       ".btn-pause{background:#333;color:#ffab00;border:1px solid #ffab00;margin-bottom:.5rem}"
+       ".btn-pause:hover{background:#444}"
        "#msg{margin-top:.5rem;color:#00e676;font-size:.75rem;min-height:1em;text-align:center}"
        ".grid{display:grid;grid-template-columns:1fr 1fr;gap:.4rem 1.5rem;margin-top:1.5rem;padding:.75rem 1rem;background:#111;border:1px solid #1e1e1e;border-radius:3px}"
        ".sl{color:#555;font-size:.62rem;text-transform:uppercase;letter-spacing:.12em}"
@@ -366,6 +370,7 @@ void handleRoot() {
        "<input type=number id=port value='" + String(tallyarbiter_port) + "' style='max-width:80px'></div>"
        "<label>Listener Name</label><input type=text id=lname value='" + listenerDeviceName + "'>"
        "<label>Device ID</label><input type=text id=did value='" + DeviceId + "'>"
+       "<button class=btn-pause id=pbtn onclick=togglePause()>⏸ Pause Reconnect (edit safely)</button>"
        "<button onclick=sv()>Save &amp; Reboot</button>"
        "<div id=msg></div>";
 
@@ -378,6 +383,20 @@ void handleRoot() {
   p += "</div>";
 
   p += "<script>"
+       "var paused=false;"
+       "function togglePause(){"
+       "var btn=document.getElementById('pbtn');"
+       "if(!paused){"
+       "fetch('/pause');paused=true;"
+       "btn.textContent='▶ Resume Reconnect';"
+       "btn.style.borderColor='#00e676';btn.style.color='#00e676';"
+       "document.getElementById('msg').textContent='Reconnect paused — edit freely then save.';"
+       "}else{"
+       "fetch('/resume');paused=false;"
+       "btn.textContent='⏸ Pause Reconnect (edit safely)';"
+       "btn.style.borderColor='#ffab00';btn.style.color='#ffab00';"
+       "document.getElementById('msg').textContent='';"
+       "}}"
        "function sv(){"
        "var s=document.getElementById('ssid').value,"
        "wp=document.getElementById('wpass').value,"
@@ -393,7 +412,6 @@ void handleRoot() {
        ".then(r=>r.text()).then(t=>document.getElementById('msg').textContent=t)"
        ".catch(()=>document.getElementById('msg').textContent='Error');}"
        "var l=document.getElementById('log');l.scrollTop=l.scrollHeight;"
-       "setTimeout(()=>location.reload(),5000);"
        "</script></body></html>";
 
   webServer.send(200, "text/html", p);
@@ -500,8 +518,10 @@ void setup() {
   }
   setLEDs(false, false);
 
-  webServer.on("/",     handleRoot);
-  webServer.on("/save", handleSave);
+  webServer.on("/",       handleRoot);
+  webServer.on("/save",   handleSave);
+  webServer.on("/pause",  []() { socketPaused = true;  webServer.send(200, "text/plain", "paused");  });
+  webServer.on("/resume", []() { socketPaused = false; webServer.send(200, "text/plain", "resumed"); });
   webServer.begin();
   addLog("Web UI: http://" + WiFi.localIP().toString());
 
@@ -510,8 +530,8 @@ void setup() {
 
 void loop() {
   webServer.handleClient();
-  socket.loop();
-  checkSerialConfig(); // handle runtime config updates
+  if (!socketPaused) socket.loop();
+  checkSerialConfig();
 
   if (pendingRegister && socketConnected) {
     pendingRegister = false;
