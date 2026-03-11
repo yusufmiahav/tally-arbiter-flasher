@@ -705,6 +705,7 @@ h1 {
         <span class="alert-icon">⚡</span>
         <div>
           <strong>Hold BOOT button</strong> on your ESP32 while clicking Connect, then release once the port appears. Some boards enter flash mode automatically.
+          <strong>Not needed for Config Only.</strong>
         </div>
       </div>
 
@@ -716,6 +717,12 @@ h1 {
           ▶ Flash Firmware
         </button>
       </div>
+      <div class="btn-row" style="margin-top:0.5rem;">
+        <button class="btn btn-ghost btn-full" id="btn-cfg-only" onclick="sendConfigOnly()" disabled style="border-color:var(--green);color:var(--green);">
+          ⟳ Update Config Only (no reflash)
+        </button>
+      </div>
+      <div class="hint" style="margin-top:0.5rem;">Use <strong>Update Config Only</strong> to change WiFi or TA settings on an already-flashed device — no BOOT button needed, just plug in and connect normally.</div>
 
       <!-- Progress -->
       <div class="progress-wrap" id="progress-wrap">
@@ -865,6 +872,7 @@ async function connectSerial() {
         ' PID:0x' + (info.usbProductId||0).toString(16).padStart(4,'0'), 'ok');
     setBadge('port-badge', 'Port selected', 'ok');
     document.getElementById('btn-flash').disabled = false;
+    document.getElementById('btn-cfg-only').disabled = false;
     document.getElementById('btn-connect').textContent = '✓ Port Selected';
     document.getElementById('btn-connect').disabled = true;
     setStep(2);
@@ -1012,6 +1020,7 @@ async function startFlash() {
     document.getElementById('btn-connect').disabled = false;
     document.getElementById('btn-connect').textContent = '⬡ Connect Device';
     document.getElementById('btn-flash').disabled = true;
+    document.getElementById('btn-cfg-only').disabled = true;
     setStep(2);
   } finally {
     isFlashing = false;
@@ -1152,6 +1161,7 @@ function resetFlasher() {
   document.querySelectorAll('.card').forEach(c => c.style.display = 'block');
   document.getElementById('success-screen').classList.remove('show');
   document.getElementById('btn-flash').disabled = true;
+  document.getElementById('btn-cfg-only').disabled = true;
   document.getElementById('btn-connect').disabled = false;
   document.getElementById('btn-connect').textContent = '⬡ Connect Device';
   document.getElementById('hold-boot-warn').style.display = 'none';
@@ -1161,6 +1171,119 @@ function resetFlasher() {
     '<span class="log-dim">// Ready for next flash.</span><br>';
   serialPort = null;
   setStep(1);
+}
+
+// ══════════════════════════════════════════════
+//  Config Only — sends CFG packet without flash
+//  For updating WiFi/TA on an already-flashed device
+// ══════════════════════════════════════════════
+async function sendConfigOnly() {
+  const cfg = getConfig();
+  if (!cfg.ssid) { log('✗ WiFi SSID is required.', 'error'); return; }
+  if (!cfg.taHost) { log('✗ Tally Arbiter IP is required.', 'error'); return; }
+
+  document.getElementById('btn-cfg-only').disabled = true;
+  document.getElementById('btn-flash').disabled = true;
+  log('Config-only mode — no firmware flash.', 'heading');
+  log('Plug in device normally (no BOOT button needed).', 'info');
+
+  let cfgPort = null;
+  try {
+    // Always request a fresh port
+    cfgPort = await navigator.serial.requestPort();
+    try { await cfgPort.close(); } catch(_) {}
+    await delay(200);
+
+    await cfgPort.open({ baudRate: 115200 });
+    log('Port open. Waiting for device...', 'info');
+    setBadge('port-badge', 'Sending config...', 'warn');
+
+    const encoder = new TextEncoder();
+    const writer  = cfgPort.writable.getWriter();
+    const reader  = cfgPort.readable.getReader();
+
+    // Wait for boot message
+    let buf = '';
+    let gotBoot = false;
+    const deadline = Date.now() + 10000;
+    while (Date.now() < deadline) {
+      try {
+        const { value } = await Promise.race([
+          reader.read(),
+          delay(100).then(() => ({ value: null }))
+        ]);
+        if (value) {
+          const chunk = new TextDecoder().decode(value);
+          buf += chunk;
+          chunk.split('\n').forEach(l => { if (l.trim()) log('← ' + l.trim(), 'dim'); });
+          if (buf.includes('Waiting for CFG') || buf.includes('Booting') ||
+              buf.includes('No WiFi') || buf.includes('Connecting')) {
+            gotBoot = true;
+            break;
+          }
+        }
+      } catch(_) { break; }
+    }
+
+    if (gotBoot) {
+      log('Device ready — sending new config...', 'ok');
+    } else {
+      log('Device not detected in time — sending config anyway...', 'warn');
+    }
+
+    const settings = {
+      ssid:   cfg.ssid,   pass:   cfg.pass,
+      tahost: cfg.taHost, taport: cfg.taPort,
+      lname:  cfg.lName,  devid:  cfg.devId,
+      cutbus: cfg.cutBus ? 1 : 0,
+      pinr:   cfg.pinRed, ping:   cfg.pinGreen,
+      static: cfg.useStatic ? 1 : 0,
+      sip:    cfg.staticIp, sgw: cfg.staticGw, ssn: cfg.staticSn
+    };
+
+    const cmd = 'CFG:' + JSON.stringify(settings) + '\n';
+    await writer.write(encoder.encode(cmd));
+    log('Config sent!', 'ok');
+
+    // Read confirmation
+    const confirmDeadline = Date.now() + 5000;
+    while (Date.now() < confirmDeadline) {
+      try {
+        const { value } = await Promise.race([
+          reader.read(),
+          delay(100).then(() => ({ value: null }))
+        ]);
+        if (value) {
+          const resp = new TextDecoder().decode(value);
+          resp.split('\n').forEach(l => {
+            if (l.trim()) log('← ' + l.trim(), l.includes('saved') ? 'ok' : 'dim');
+          });
+          if (resp.includes('saved') || resp.includes('Rebooting')) break;
+        }
+      } catch(_) { break; }
+    }
+
+    writer.releaseLock();
+    try { reader.cancel(); } catch(_) {}
+    reader.releaseLock();
+    await cfgPort.close();
+
+    setBadge('port-badge', 'Config written!', 'ok');
+    log('✓ Device rebooting with new settings. Watch the LEDs.', 'ok');
+    setStep(4);
+
+  } catch(e) {
+    if (e.name !== 'NotFoundError') {
+      log('Config error: ' + e.message, 'error');
+    } else {
+      log('Port selection cancelled.', 'warn');
+    }
+    setBadge('port-badge', 'Not connected', 'idle');
+    if (cfgPort) { try { await cfgPort.close(); } catch(_) {} }
+  } finally {
+    document.getElementById('btn-cfg-only').disabled = false;
+    document.getElementById('btn-flash').disabled = false;
+  }
 }
 </script>
 </body>
