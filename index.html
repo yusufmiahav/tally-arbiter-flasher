@@ -809,8 +809,8 @@ h1 {
 // ══════════════════════════════════════════════
 //  State
 // ══════════════════════════════════════════════
-let serialPort   = null;
-let isFlashing   = false;
+let serialPort = null;
+let isFlashing = false;
 
 // ══════════════════════════════════════════════
 //  Boot checks
@@ -821,13 +821,14 @@ window.addEventListener('DOMContentLoaded', () => {
     document.getElementById('main-content').style.display = 'none';
     return;
   }
-  // Auto-generate a default listener name hint
   document.getElementById('listener-name').placeholder = 'esp32-tally-' + Math.floor(Math.random()*9000+1000);
 });
 
 // ══════════════════════════════════════════════
-//  UI helpers
+//  Helpers
 // ══════════════════════════════════════════════
+function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+
 function setStep(n) {
   for (let i = 1; i <= 4; i++) {
     const el = document.getElementById('step-' + i);
@@ -842,7 +843,8 @@ function toggleStatic() {
   document.getElementById('static-fields').style.display = show ? 'block' : 'none';
 }
 
-function log(msg, type = 'info') {
+function log(msg, type) {
+  type = type || 'info';
   const t = document.getElementById('terminal');
   const line = document.createElement('span');
   line.className = 'log-' + type;
@@ -876,34 +878,28 @@ function setBadge(id, text, type) {
 //  Validation
 // ══════════════════════════════════════════════
 function getConfig() {
-  const ssid     = document.getElementById('wifi-ssid').value.trim();
-  const pass     = document.getElementById('wifi-pass').value;
-  const taHost   = document.getElementById('ta-host').value.trim();
-  const taPort   = parseInt(document.getElementById('ta-port').value) || 4455;
-  const lName    = document.getElementById('listener-name').value.trim() || ('esp32-tally-' + Date.now().toString(16).slice(-6));
-  const devId    = document.getElementById('device-id').value.trim() || 'unassigned';
-  const cutBus   = document.getElementById('cut-bus').checked;
-  const pinRed   = parseInt(document.getElementById('pin-red').value) || 23;
-  const pinGreen = parseInt(document.getElementById('pin-green').value) || 22;
+  const ssid      = document.getElementById('wifi-ssid').value.trim();
+  const pass      = document.getElementById('wifi-pass').value;
+  const taHost    = document.getElementById('ta-host').value.trim();
+  const taPort    = parseInt(document.getElementById('ta-port').value) || 4455;
+  const lName     = document.getElementById('listener-name').value.trim() || ('esp32-tally-' + Date.now().toString(16).slice(-6));
+  const devId     = document.getElementById('device-id').value.trim() || 'unassigned';
+  const cutBus    = document.getElementById('cut-bus').checked;
+  const pinRed    = parseInt(document.getElementById('pin-red').value) || 23;
+  const pinGreen  = parseInt(document.getElementById('pin-green').value) || 22;
   const useStatic = document.getElementById('use-static').checked;
-  const staticIp = document.getElementById('static-ip').value.trim() || '192.168.1.100';
-  const staticGw = document.getElementById('static-gw').value.trim() || '192.168.1.1';
-  const staticSn = document.getElementById('static-sn').value.trim() || '255.255.255.0';
-
+  const staticIp  = document.getElementById('static-ip').value.trim() || '192.168.1.100';
+  const staticGw  = document.getElementById('static-gw').value.trim() || '192.168.1.1';
+  const staticSn  = document.getElementById('static-sn').value.trim() || '255.255.255.0';
   const errors = [];
   if (!ssid)   errors.push('WiFi SSID is required.');
   if (!taHost) errors.push('Tally Arbiter IP is required.');
-
   return { ssid, pass, taHost, taPort, lName, devId, cutBus, pinRed, pinGreen,
            useStatic, staticIp, staticGw, staticSn, errors };
 }
 
 // ══════════════════════════════════════════════
-//  Serial connect — just picks the port, does
-//  NOT open it. esptool-js opens it itself.
-// ══════════════════════════════════════════════
-// ══════════════════════════════════════════════
-//  Serial connect
+//  Serial Connect
 // ══════════════════════════════════════════════
 async function connectSerial() {
   const btn = document.getElementById('btn-connect');
@@ -917,15 +913,14 @@ async function connectSerial() {
     setBadge('port-badge', 'Port selected', 'ok');
     document.getElementById('btn-flash').disabled = false;
     document.getElementById('btn-cfg-only').disabled = false;
-    btn.textContent = '✓ Connected — click to change';
+    btn.textContent = 'Change Port';
     btn.disabled = false;
     setStep(2);
   } catch(e) {
-    btn.textContent = '⬡ Connect Device';
+    btn.textContent = 'Connect Device';
     btn.disabled = false;
     if (e.name !== 'NotFoundError') {
       log('Connect error: ' + e.message, 'error');
-      setBadge('port-badge', 'Error', 'error');
     } else {
       log('Port selection cancelled.', 'warn');
     }
@@ -933,31 +928,17 @@ async function connectSerial() {
 }
 
 // ══════════════════════════════════════════════
-//  Firmware generation
-//  We generate a self-contained .ino sketch as
-//  a Blob, then use esptool-js to compile+flash
-//  via the Improv Serial / direct flash path.
-//
-//  NOTE: True browser-side compilation isn't
-//  possible — instead we use a pre-compiled
-//  firmware binary (firmware.bin) stored in the
-//  repo alongside this page, and patch the
-//  settings into NVS after flashing using the
-//  Preferences namespace via Serial commands.
+//  Flash Firmware
 // ══════════════════════════════════════════════
-
 async function startFlash() {
   if (isFlashing) return;
   const cfg = getConfig();
-
-  if (cfg.errors.length > 0) {
-    cfg.errors.forEach(e => log('✗ ' + e, 'error'));
-    return;
-  }
+  if (cfg.errors.length > 0) { cfg.errors.forEach(function(e) { log('x ' + e, 'error'); }); return; }
 
   isFlashing = true;
   setStep(3);
   document.getElementById('btn-flash').disabled = true;
+  document.getElementById('btn-cfg-only').disabled = true;
   document.getElementById('btn-connect').disabled = true;
 
   log('Starting flash sequence...', 'heading');
@@ -966,91 +947,84 @@ async function startFlash() {
   log('Listener: ' + cfg.lName, 'info');
 
   try {
-    // ── 1. Fetch firmware binary from repo ──
+    setProgress(5, 'Fetching firmware...');
     log('Fetching firmware binary...', 'info');
-    setProgress(5, 'Downloading firmware...');
 
-    const fwRes = await fetch('./firmware/tally-arbiter-esp32.ino.bin');
-    if (!fwRes.ok) throw new Error('Could not fetch firmware binary (HTTP ' + fwRes.status + '). Make sure firmware/tally-arbiter-esp32.ino.bin exists in the repo.');
-    const fwBuffer = await fwRes.arrayBuffer();
-    log('Firmware: ' + (fwBuffer.byteLength / 1024).toFixed(1) + ' KB', 'ok');
-    setProgress(15, 'Connecting to ESP32...');
+    const base = window.location.href.replace(/\/[^/]*$/, '/');
+    const fwRes  = await fetch(base + 'firmware/tally-arbiter-esp32.ino.bin');
+    if (!fwRes.ok) throw new Error('Firmware fetch failed: ' + fwRes.status);
+    const fwBuf = await fwRes.arrayBuffer();
+    log('Firmware: ' + (fwBuf.byteLength / 1024).toFixed(1) + ' KB', 'ok');
 
-    // Chrome requires the port to be opened at least once before
-    // esptool-js Transport can open it at flash baud rate.
-    // Open it, then close it cleanly — esptool-js then opens it itself.
-    try {
-      await serialPort.open({ baudRate: 115200 });
-      await serialPort.close();
-      await delay(300);
-    } catch(e) {
-      // If it fails to open here the device may be busy — tell the user
-      throw new Error('Could not open port: ' + e.message + '. Try unplugging and replugging the USB cable.');
-    }
+    log('Fetching bootloader & partition table...', 'info');
+    const [blRes, ptRes] = await Promise.all([
+      fetch(base + 'firmware/tally-arbiter-esp32.ino.bootloader.bin'),
+      fetch(base + 'firmware/tally-arbiter-esp32.ino.partitions.bin')
+    ]);
+    if (!blRes.ok) throw new Error('Bootloader fetch failed');
+    if (!ptRes.ok) throw new Error('Partitions fetch failed');
+    const blBuf = await blRes.arrayBuffer();
+    const ptBuf = await ptRes.arrayBuffer();
 
-    const transport = new window._Transport(serialPort);
-    log('Connecting to bootloader... hold BOOT + tap EN/RST if this hangs', 'info');
-    const espLoader = new window._ESPLoader({
+    setProgress(10, 'Connecting to bootloader...');
+    log('Connecting to bootloader... hold BOOT + tap EN/RST if this hangs', 'warn');
+
+    const ESPLoader  = window._ESPLoader;
+    const Transport  = window._Transport;
+    if (!ESPLoader || !Transport) throw new Error('esptool-js not loaded yet — please refresh and try again');
+
+    const transport = new Transport(serialPort, true);
+    const espLoader = new ESPLoader({
       transport,
-      baudrate: 921600,
+      baudrate: 115200,
       terminal: {
-        clean() {},
-        writeLine(s) { if(s.trim()) log(s, 'dim'); },
-        write(s)     { if(s.trim()) log(s, 'dim'); }
+        clean: function() {},
+        writeLine: function(s) { log(s, 'dim'); },
+        write:     function(s) { log(s, 'dim'); }
       }
     });
 
-    const chip = await espLoader.main();
-    log('Chip detected: ' + chip, 'ok');
-    setProgress(20, 'Building file list...');
+    await espLoader.main();
+    const chip = await espLoader.get_flash_size();
+    log('Chip detected: ' + espLoader.chip.CHIP_NAME, 'ok');
+    setProgress(15, 'Uploading stub...');
+    await espLoader.runStub();
+    await espLoader.changeBaud(921600);
+    log('Changing baudrate to 921600', 'info');
+    log('Changed', 'ok');
 
-    // Fetch all 3 binaries in parallel
+    const flashFiles = [
+      { name: 'bootloader', data: blBuf, address: 0x1000  },
+      { name: 'partitions', data: ptBuf, address: 0x8000  },
+      { name: 'firmware',   data: fwBuf, address: 0x10000 }
+    ];
+
     log('Fetching bootloader & partition table...', 'info');
-    const [blRes, ptRes] = await Promise.all([
-      fetch('./firmware/tally-arbiter-esp32.ino.bootloader.bin'),
-      fetch('./firmware/tally-arbiter-esp32.ino.partitions.bin')
-    ]);
-    const blBuf = blRes.ok ? await blRes.arrayBuffer() : null;
-    const ptBuf = ptRes.ok ? await ptRes.arrayBuffer() : null;
-    if (!blBuf) log('Warning: bootloader not found, skipping.', 'warn');
-    if (!ptBuf) log('Warning: partitions not found, skipping.', 'warn');
-
-    // Build flash list: bootloader @ 0x1000, partitions @ 0x8000, app @ 0x10000
-    const flashFiles = [];
-    if (blBuf) flashFiles.push({ data: blBuf, address: 0x1000,  name: 'bootloader' });
-    if (ptBuf) flashFiles.push({ data: ptBuf, address: 0x8000,  name: 'partitions' });
-    flashFiles.push(        { data: fwBuffer, address: 0x10000, name: 'firmware'   });
-
     log('Writing ' + flashFiles.length + ' file(s) to flash...', 'info');
 
-    const fileArray = flashFiles.map(f => ({
-      data:    espLoader.ui8ToBstr(new Uint8Array(f.data)),
-      address: f.address
-    }));
+    const fileArray = flashFiles.map(function(f) {
+      return { data: espLoader.ui8ToBstr(new Uint8Array(f.data)), address: f.address };
+    });
 
     await espLoader.writeFlash({
-      fileArray,
-      flashSize:  "keep",
-      flashMode:  "keep",
-      flashFreq:  "keep",
-      eraseAll:   false,
-      compress:   true,
-      reportProgress: (fileIndex, written, total) => {
-        const pct = 20 + (written / total) * 75;
-        setProgress(pct,
-          'Writing ' + flashFiles[fileIndex].name + '... ' +
+      fileArray: fileArray,
+      flashSize: 'keep',
+      flashMode: 'keep',
+      flashFreq: 'keep',
+      eraseAll:  false,
+      compress:  true,
+      reportProgress: function(fileIndex, written, total) {
+        var pct = 20 + (written / total) * 75;
+        setProgress(pct, 'Writing ' + flashFiles[fileIndex].name + '... ' +
           Math.round(written/1024) + '/' + Math.round(total/1024) + ' KB');
       }
     });
 
-    setProgress(90, 'Saving settings to NVS...');
+    setProgress(96, 'Resetting device...');
     log('Flashing complete. Writing settings...', 'ok');
-
     try { await espLoader.softReset(); } catch(_) {}
     try { await transport.disconnect(); } catch(_) {}
 
-    // ── 3. Re-open port at 115200 and write NVS via Serial ──
-    await delay(2000); // wait for reboot
     await writeNVSSettings(cfg);
 
     setProgress(100, 'Done!');
@@ -1060,108 +1034,79 @@ async function startFlash() {
   } catch(err) {
     log('Flash error: ' + err.message, 'error');
     log('Disconnect and reconnect the USB cable, then click Connect Device again.', 'warn');
-    setBadge('port-badge', 'Flash failed — reconnect USB', 'error');
-    // Reset port so user gets a fresh requestPort() next attempt
+    setBadge('port-badge', 'Flash failed', 'error');
     serialPort = null;
     document.getElementById('btn-connect').disabled = false;
-    document.getElementById('btn-connect').textContent = '⬡ Connect Device';
+    document.getElementById('btn-connect').textContent = 'Connect Device';
     document.getElementById('btn-flash').disabled = true;
     document.getElementById('btn-cfg-only').disabled = true;
     setStep(2);
   } finally {
     isFlashing = false;
     document.getElementById('btn-flash').disabled = false;
+    document.getElementById('btn-cfg-only').disabled = false;
   }
 }
 
 // ══════════════════════════════════════════════
-//  Write settings via Serial after flash
-//  Requests a FRESH port — the original port is
-//  still locked by esptool-js transport layer
+//  Write NVS Settings via Serial after flash
 // ══════════════════════════════════════════════
 async function writeNVSSettings(cfg) {
-  let cfgPort = null;
+  var cfgPort = null;
   try {
-    log('Firmware written. Waiting for device to reboot...', 'info');
+    log('Waiting for device to boot...', 'info');
     await delay(4000);
-
-    // Ask user to select the port again — browser security requires
-    // a fresh requestPort() after esptool-js has used the port
     log('Please select the serial port again to write settings...', 'warn');
     cfgPort = await navigator.serial.requestPort();
-
-    // Close it if somehow open
     try { await cfgPort.close(); } catch(_) {}
     await delay(300);
-
     await cfgPort.open({ baudRate: 115200 });
     log('Serial open. Waiting for boot message...', 'info');
 
-    const encoder = new TextEncoder();
-    const writer  = cfgPort.writable.getWriter();
-    const reader  = cfgPort.readable.getReader();
+    var encoder = new TextEncoder();
+    var writer  = cfgPort.writable.getWriter();
+    var reader  = cfgPort.readable.getReader();
+    var buf = '';
+    var gotBoot = false;
+    var deadline = Date.now() + 8000;
 
-    // Wait up to 8s for "Waiting for CFG" or "Booting" from firmware
-    let buf = '';
-    let gotBoot = false;
-    const deadline = Date.now() + 8000;
     while (Date.now() < deadline) {
       try {
-        const { value } = await Promise.race([
-          reader.read(),
-          delay(100).then(() => ({ value: null }))
-        ]);
-        if (value) {
-          const chunk = new TextDecoder().decode(value);
+        var rr = await Promise.race([reader.read(), delay(100).then(function() { return { value: null }; })]);
+        if (rr.value) {
+          var chunk = new TextDecoder().decode(rr.value);
           buf += chunk;
-          chunk.split('\n').forEach(l => { if (l.trim()) log('← ' + l.trim(), 'dim'); });
-          if (buf.includes('Waiting for CFG') || buf.includes('Booting') || buf.includes('No WiFi')) {
-            gotBoot = true;
-            break;
+          if (buf.indexOf('Waiting for CFG') >= 0 || buf.indexOf('Booting') >= 0 || buf.indexOf('No WiFi') >= 0) {
+            gotBoot = true; break;
           }
         }
       } catch(_) { break; }
     }
 
-    if (gotBoot) {
-      log('Device ready — sending config...', 'ok');
-    } else {
-      log('Sending config (boot message not seen — sending anyway)...', 'warn');
-    }
+    if (gotBoot) log('Device ready — sending config...', 'ok');
+    else log('Sending config anyway...', 'warn');
 
-    // Build CFG packet
-    const settings = {
-      ssid:   cfg.ssid,
-      pass:   cfg.pass,
-      tahost: cfg.taHost,
-      taport: cfg.taPort,
-      lname:  cfg.lName,
-      devid:  cfg.devId,
-      cutbus: cfg.cutBus ? 1 : 0,
-      pinr:   cfg.pinRed,
-      ping:   cfg.pinGreen,
-      static: cfg.useStatic ? 1 : 0,
-      sip:    cfg.staticIp,
-      sgw:    cfg.staticGw,
-      ssn:    cfg.staticSn
+    var settings = {
+      ssid: cfg.ssid, pass: cfg.pass, tahost: cfg.taHost, taport: cfg.taPort,
+      lname: cfg.lName, devid: cfg.devId, cutbus: cfg.cutBus ? 1 : 0,
+      pinr: cfg.pinRed, ping: cfg.pinGreen,
+      'static': cfg.useStatic ? 1 : 0,
+      sip: cfg.staticIp, sgw: cfg.staticGw, ssn: cfg.staticSn
     };
 
-    const cmd = 'CFG:' + JSON.stringify(settings) + '\n';
+    var cmd = 'CFG:' + JSON.stringify(settings) + '\n';
     await writer.write(encoder.encode(cmd));
     log('Config sent!', 'ok');
 
-    // Read confirmation
-    const confirmDeadline = Date.now() + 4000;
-    while (Date.now() < confirmDeadline) {
+    var confDeadline = Date.now() + 4000;
+    while (Date.now() < confDeadline) {
       try {
-        const { value } = await Promise.race([
-          reader.read(),
-          delay(100).then(() => ({ value: null }))
-        ]);
-        if (value) {
-          const resp = new TextDecoder().decode(value);
-          resp.split('\n').forEach(l => { if (l.trim()) log('← ' + l.trim(), l.includes('saved') ? 'ok' : 'dim'); });
-          if (resp.includes('saved') || resp.includes('Rebooting')) break;
+        var cr = await Promise.race([reader.read(), delay(100).then(function() { return { value: null }; })]);
+        if (cr.value) {
+          var resp = new TextDecoder().decode(cr.value);
+          if (resp.indexOf('saved') >= 0 || resp.indexOf('Rebooting') >= 0) {
+            log('Device confirmed: ' + resp.trim(), 'ok'); break;
+          }
         }
       } catch(_) { break; }
     }
@@ -1170,36 +1115,138 @@ async function writeNVSSettings(cfg) {
     try { reader.cancel(); } catch(_) {}
     reader.releaseLock();
     await cfgPort.close();
-
-    log('Settings saved! Device is rebooting and connecting to WiFi.', 'ok');
+    log('Settings saved! Device rebooting.', 'ok');
 
   } catch(e) {
-    if (e.name === 'NotFoundError') {
-      log('Port selection skipped — settings not written automatically.', 'warn');
-    } else {
-      log('Settings write error: ' + e.message, 'warn');
-    }
-    log('▶ To configure manually, open Serial Monitor at 115200 baud and send:', 'warn');
-    log('CFG:{"ssid":"' + cfg.ssid + '","pass":"' + cfg.pass + '","tahost":"' + cfg.taHost +
-        '","taport":' + cfg.taPort + ',"lname":"' + cfg.lName + '","devid":"' + cfg.devId +
-        '","cutbus":' + (cfg.cutBus?1:0) + ',"pinr":' + cfg.pinRed + ',"ping":' + cfg.pinGreen +
-        ',"static":0}', 'warn');
+    if (e.name !== 'NotFoundError') log('Settings write error: ' + e.message, 'warn');
+    else log('Port selection skipped.', 'warn');
     if (cfgPort) { try { await cfgPort.close(); } catch(_) {} }
   }
 }
 
 // ══════════════════════════════════════════════
-//  Helpers
+//  Config Only (no reflash)
 // ══════════════════════════════════════════════
+async function sendConfigOnly() {
+  var cfg = getConfig();
+  if (!cfg.ssid)   { log('WiFi SSID is required.', 'error'); return; }
+  if (!cfg.taHost) { log('Tally Arbiter IP is required.', 'error'); return; }
+
+  document.getElementById('btn-cfg-only').disabled = true;
+  document.getElementById('btn-flash').disabled = true;
+  log('Config-only mode — no firmware flash.', 'heading');
+
+  var cfgPort = null;
+  try {
+    cfgPort = await navigator.serial.requestPort();
+    try { await cfgPort.close(); } catch(_) {}
+    await delay(200);
+    await cfgPort.open({ baudRate: 115200 });
+    log('Port open. Waiting for device...', 'info');
+    setBadge('port-badge', 'Sending config...', 'warn');
+
+    var encoder = new TextEncoder();
+    var writer  = cfgPort.writable.getWriter();
+    var reader  = cfgPort.readable.getReader();
+    var buf = '';
+    var gotBoot = false;
+    var deadline = Date.now() + 10000;
+
+    while (Date.now() < deadline) {
+      try {
+        var rr = await Promise.race([reader.read(), delay(100).then(function() { return { value: null }; })]);
+        if (rr.value) {
+          var chunk = new TextDecoder().decode(rr.value);
+          buf += chunk;
+          if (buf.indexOf('Waiting for CFG') >= 0 || buf.indexOf('Booting') >= 0 ||
+              buf.indexOf('No WiFi') >= 0 || buf.indexOf('Connecting') >= 0) {
+            gotBoot = true; break;
+          }
+        }
+      } catch(_) { break; }
+    }
+
+    if (gotBoot) log('Device ready — sending new config...', 'ok');
+    else log('Sending config (device not detected in time)...', 'warn');
+
+    var settings = {
+      ssid: cfg.ssid, pass: cfg.pass, tahost: cfg.taHost, taport: cfg.taPort,
+      lname: cfg.lName, devid: cfg.devId, cutbus: cfg.cutBus ? 1 : 0,
+      pinr: cfg.pinRed, ping: cfg.pinGreen,
+      'static': cfg.useStatic ? 1 : 0,
+      sip: cfg.staticIp, sgw: cfg.staticGw, ssn: cfg.staticSn
+    };
+
+    var cmd = 'CFG:' + JSON.stringify(settings) + '\n';
+    await writer.write(encoder.encode(cmd));
+    log('Config sent!', 'ok');
+
+    var confDeadline = Date.now() + 5000;
+    while (Date.now() < confDeadline) {
+      try {
+        var cr = await Promise.race([reader.read(), delay(100).then(function() { return { value: null }; })]);
+        if (cr.value) {
+          var resp = new TextDecoder().decode(cr.value);
+          if (resp.indexOf('saved') >= 0 || resp.indexOf('Rebooting') >= 0) {
+            log('Device confirmed: ' + resp.trim(), 'ok'); break;
+          }
+        }
+      } catch(_) { break; }
+    }
+
+    writer.releaseLock();
+    try { reader.cancel(); } catch(_) {}
+    reader.releaseLock();
+    await cfgPort.close();
+    setBadge('port-badge', 'Config written!', 'ok');
+    log('Device rebooting with new settings.', 'ok');
+
+  } catch(e) {
+    if (e.name !== 'NotFoundError') log('Config error: ' + e.message, 'error');
+    else log('Port selection cancelled.', 'warn');
+    setBadge('port-badge', 'Not connected', 'idle');
+    if (cfgPort) { try { await cfgPort.close(); } catch(_) {} }
+  } finally {
+    document.getElementById('btn-cfg-only').disabled = false;
+    document.getElementById('btn-flash').disabled = false;
+  }
+}
+
+// ══════════════════════════════════════════════
+//  Success / Reset
+// ══════════════════════════════════════════════
+function showSuccess(cfg) {
+  document.querySelectorAll('.card').forEach(function(c) { c.style.display = 'none'; });
+  document.getElementById('success-screen').classList.add('show');
+  document.getElementById('done-ssid').textContent = cfg.ssid;
+  document.getElementById('done-host').textContent = cfg.taHost + ':' + cfg.taPort;
+  setStep(4);
+}
+
+function resetFlasher() {
+  document.querySelectorAll('.card').forEach(function(c) { c.style.display = 'block'; });
+  document.getElementById('success-screen').classList.remove('show');
+  document.getElementById('btn-flash').disabled = true;
+  document.getElementById('btn-cfg-only').disabled = true;
+  var btnConnect = document.getElementById('btn-connect');
+  btnConnect.disabled = false;
+  btnConnect.textContent = 'Connect Device';
+  setBadge('port-badge', 'Not connected', 'idle');
+  document.getElementById('progress-wrap').classList.remove('show');
+  document.getElementById('terminal').innerHTML = '<span class="log-dim">// Ready for next flash.</span><br>';
+  serialPort = null;
+  setStep(1);
+}
+
 // ══════════════════════════════════════════════
 //  Serial Monitor
 // ══════════════════════════════════════════════
-let monitorPort   = null;
-let monitorReader = null;
-let monitorActive = false;
+var monitorPort   = null;
+var monitorReader = null;
+var monitorActive = false;
 
 function monitorLog(text) {
-  const t = document.getElementById('monitor-terminal');
+  var t = document.getElementById('monitor-terminal');
   t.textContent += text;
   t.scrollTop = t.scrollHeight;
 }
@@ -1209,32 +1256,18 @@ function clearMonitor() {
 }
 
 function setMonitorBadge(text, type) {
-  const b = document.getElementById('monitor-badge');
+  var b = document.getElementById('monitor-badge');
   b.textContent = text;
   b.className = 'badge badge-' + type;
 }
 
 async function monitorConnect() {
   try {
-    // Get all previously granted ports first — avoids re-prompting if already granted
-    const ports = await navigator.serial.getPorts();
-    const baud  = parseInt(document.getElementById('monitor-baud').value);
-
-    // Pick a port: prefer one not already used by the flasher, else ask
-    let candidate = ports.find(p => p !== serialPort) || null;
-    if (!candidate) {
-      monitorLog('// Select your ESP32 serial port in the browser dialog...\n');
-      candidate = await navigator.serial.requestPort();
-    }
-
-    monitorPort = candidate;
-
-    // If port is open (e.g. leftover state), close it first
+    var baud = parseInt(document.getElementById('monitor-baud').value);
+    monitorPort = await navigator.serial.requestPort();
     try { await monitorPort.close(); } catch(_) {}
-    await new Promise(r => setTimeout(r, 200));
-
+    await delay(200);
     await monitorPort.open({ baudRate: baud });
-
     monitorActive = true;
     setMonitorBadge('Connected', 'ok');
     document.getElementById('btn-monitor-connect').disabled = true;
@@ -1242,20 +1275,17 @@ async function monitorConnect() {
     document.getElementById('monitor-baud').disabled = true;
     monitorLog('// Connected at ' + baud + ' baud — press EN/RST on your ESP32 to see output.\n\n');
 
-    // Continuous read loop
     monitorReader = monitorPort.readable.getReader();
-    const decoder = new TextDecoder();
+    var decoder = new TextDecoder();
     while (monitorActive) {
       try {
-        const { value, done } = await monitorReader.read();
-        if (done || !monitorActive) break;
-        if (value) monitorLog(decoder.decode(value));
+        var result = await monitorReader.read();
+        if (result.done || !monitorActive) break;
+        if (result.value) monitorLog(decoder.decode(result.value));
       } catch(_) { break; }
     }
   } catch(e) {
-    if (e.name !== 'NotFoundError') {
-      monitorLog('// Error: ' + e.message + '\n');
-    }
+    if (e.name !== 'NotFoundError') monitorLog('// Error: ' + e.message + '\n');
     await monitorDisconnect();
   }
 }
@@ -1276,148 +1306,6 @@ async function monitorDisconnect() {
   document.getElementById('btn-monitor-disconnect').disabled = true;
   document.getElementById('monitor-baud').disabled = false;
   monitorLog('\n// Disconnected.\n');
-}
-
-
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-function showSuccess(cfg) {
-  document.querySelectorAll('.card').forEach(c => c.style.display = 'none');
-  document.getElementById('success-screen').classList.add('show');
-  document.getElementById('done-ssid').textContent = cfg.ssid;
-  document.getElementById('done-host').textContent = cfg.taHost + ':' + cfg.taPort;
-  setStep(4);
-}
-
-function resetFlasher() {
-  document.querySelectorAll('.card').forEach(c => c.style.display = 'block');
-  document.getElementById('success-screen').classList.remove('show');
-  document.getElementById('btn-flash').disabled = true;
-  document.getElementById('btn-cfg-only').disabled = true;
-  const btnConnect = document.getElementById('btn-connect');
-  btnConnect.disabled = false;
-  btnConnect.textContent = '⬡ Connect Device';
-  document.getElementById('hold-boot-warn').style.display = 'none';
-  setBadge('port-badge', 'Not connected', 'idle');
-  document.getElementById('progress-wrap').classList.remove('show');
-  document.getElementById('terminal').innerHTML =
-    '<span class="log-dim">// Ready for next flash.</span><br>';
-  serialPort = null;
-  setStep(1);
-}
-
-// ══════════════════════════════════════════════
-//  Config Only — sends CFG packet without flash
-//  For updating WiFi/TA on an already-flashed device
-// ══════════════════════════════════════════════
-async function sendConfigOnly() {
-  const cfg = getConfig();
-  if (!cfg.ssid) { log('✗ WiFi SSID is required.', 'error'); return; }
-  if (!cfg.taHost) { log('✗ Tally Arbiter IP is required.', 'error'); return; }
-
-  document.getElementById('btn-cfg-only').disabled = true;
-  document.getElementById('btn-flash').disabled = true;
-  log('Config-only mode — no firmware flash.', 'heading');
-  log('Plug in device normally (no BOOT button needed).', 'info');
-
-  let cfgPort = null;
-  try {
-    // Always request a fresh port
-    cfgPort = await navigator.serial.requestPort();
-    try { await cfgPort.close(); } catch(_) {}
-    await delay(200);
-
-    await cfgPort.open({ baudRate: 115200 });
-    log('Port open. Waiting for device...', 'info');
-    setBadge('port-badge', 'Sending config...', 'warn');
-
-    const encoder = new TextEncoder();
-    const writer  = cfgPort.writable.getWriter();
-    const reader  = cfgPort.readable.getReader();
-
-    // Wait for boot message
-    let buf = '';
-    let gotBoot = false;
-    const deadline = Date.now() + 10000;
-    while (Date.now() < deadline) {
-      try {
-        const { value } = await Promise.race([
-          reader.read(),
-          delay(100).then(() => ({ value: null }))
-        ]);
-        if (value) {
-          const chunk = new TextDecoder().decode(value);
-          buf += chunk;
-          chunk.split('\n').forEach(l => { if (l.trim()) log('← ' + l.trim(), 'dim'); });
-          if (buf.includes('Waiting for CFG') || buf.includes('Booting') ||
-              buf.includes('No WiFi') || buf.includes('Connecting')) {
-            gotBoot = true;
-            break;
-          }
-        }
-      } catch(_) { break; }
-    }
-
-    if (gotBoot) {
-      log('Device ready — sending new config...', 'ok');
-    } else {
-      log('Device not detected in time — sending config anyway...', 'warn');
-    }
-
-    const settings = {
-      ssid:   cfg.ssid,   pass:   cfg.pass,
-      tahost: cfg.taHost, taport: cfg.taPort,
-      lname:  cfg.lName,  devid:  cfg.devId,
-      cutbus: cfg.cutBus ? 1 : 0,
-      pinr:   cfg.pinRed, ping:   cfg.pinGreen,
-      static: cfg.useStatic ? 1 : 0,
-      sip:    cfg.staticIp, sgw: cfg.staticGw, ssn: cfg.staticSn
-    };
-
-    const cmd = 'CFG:' + JSON.stringify(settings) + '\n';
-    await writer.write(encoder.encode(cmd));
-    log('Config sent!', 'ok');
-
-    // Read confirmation
-    const confirmDeadline = Date.now() + 5000;
-    while (Date.now() < confirmDeadline) {
-      try {
-        const { value } = await Promise.race([
-          reader.read(),
-          delay(100).then(() => ({ value: null }))
-        ]);
-        if (value) {
-          const resp = new TextDecoder().decode(value);
-          resp.split('\n').forEach(l => {
-            if (l.trim()) log('← ' + l.trim(), l.includes('saved') ? 'ok' : 'dim');
-          });
-          if (resp.includes('saved') || resp.includes('Rebooting')) break;
-        }
-      } catch(_) { break; }
-    }
-
-    writer.releaseLock();
-    try { reader.cancel(); } catch(_) {}
-    reader.releaseLock();
-    await cfgPort.close();
-
-    setBadge('port-badge', 'Config written!', 'ok');
-    log('✓ Device rebooting with new settings. Watch the LEDs.', 'ok');
-    setStep(4);
-
-  } catch(e) {
-    if (e.name !== 'NotFoundError') {
-      log('Config error: ' + e.message, 'error');
-    } else {
-      log('Port selection cancelled.', 'warn');
-    }
-    setBadge('port-badge', 'Not connected', 'idle');
-    if (cfgPort) { try { await cfgPort.close(); } catch(_) {} }
-  } finally {
-    document.getElementById('btn-cfg-only').disabled = false;
-    document.getElementById('btn-flash').disabled = false;
-  }
 }
 </script>
 </body>
