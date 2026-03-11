@@ -1020,12 +1020,19 @@ async function startFlash() {
 }
 
 // ══════════════════════════════════════════════
-//  Write settings via Serial (Preferences/NVS)
-//  The firmware boots and listens on Serial for
-//  a JSON settings packet on first boot.
+//  Write settings via Serial after flash
 // ══════════════════════════════════════════════
 async function writeNVSSettings(cfg) {
   try {
+    log('Waiting for device to boot...', 'info');
+
+    // Give the ESP32 time to fully reboot and release the port
+    await delay(3000);
+
+    // Force close port in case esptool-js left it open
+    try { await serialPort.close(); } catch(_) {}
+    await delay(500);
+
     log('Opening serial to write settings...', 'info');
     await serialPort.open({ baudRate: 115200 });
 
@@ -1033,53 +1040,88 @@ async function writeNVSSettings(cfg) {
     const writer  = serialPort.writable.getWriter();
     const reader  = serialPort.readable.getReader();
 
-    // Wait for device ready prompt
-    let ready = false;
-    const readTimeout = Date.now() + 8000;
+    // Read serial output and wait for any sign of life from the firmware
+    log('Waiting for firmware boot message...', 'info');
     let buf = '';
-    while (!ready && Date.now() < readTimeout) {
-      const { value, done } = await Promise.race([
-        reader.read(),
-        delay(500).then(() => ({ value: null, done: false }))
-      ]);
-      if (value) {
-        buf += new TextDecoder().decode(value);
-        if (buf.includes('READY_FOR_CONFIG') || buf.includes('Booting')) ready = true;
-      }
+    let gotBoot = false;
+    const deadline = Date.now() + 10000;
+
+    while (Date.now() < deadline) {
+      try {
+        const { value, done } = await Promise.race([
+          reader.read(),
+          delay(200).then(() => ({ value: null, done: false }))
+        ]);
+        if (done) break;
+        if (value) {
+          const chunk = new TextDecoder().decode(value);
+          buf += chunk;
+          // Log what we receive so user can see it
+          chunk.split('\n').forEach(l => { if(l.trim()) log('ESP: ' + l.trim(), 'dim'); });
+          if (buf.includes('Booting') || buf.includes('CFG') || buf.includes('Connecting')) {
+            gotBoot = true;
+            break;
+          }
+        }
+      } catch(_) { break; }
     }
 
-    // Send settings as JSON command understood by the firmware
-    // Format: CFG:<json>\n
+    if (!gotBoot) {
+      log('Boot message not detected — sending config anyway...', 'warn');
+    }
+
+    // Build and send CFG packet
     const settings = {
-      ssid:    cfg.ssid,
-      pass:    cfg.pass,
-      tahost:  cfg.taHost,
-      taport:  cfg.taPort,
-      lname:   cfg.lName,
-      devid:   cfg.devId,
-      cutbus:  cfg.cutBus ? 1 : 0,
-      pinr:    cfg.pinRed,
-      ping:    cfg.pinGreen,
-      static:  cfg.useStatic ? 1 : 0,
-      sip:     cfg.staticIp,
-      sgw:     cfg.staticGw,
-      ssn:     cfg.staticSn
+      ssid:   cfg.ssid,
+      pass:   cfg.pass,
+      tahost: cfg.taHost,
+      taport: cfg.taPort,
+      lname:  cfg.lName,
+      devid:  cfg.devId,
+      cutbus: cfg.cutBus ? 1 : 0,
+      pinr:   cfg.pinRed,
+      ping:   cfg.pinGreen,
+      static: cfg.useStatic ? 1 : 0,
+      sip:    cfg.staticIp,
+      sgw:    cfg.staticGw,
+      ssn:    cfg.staticSn
     };
 
     const cmd = 'CFG:' + JSON.stringify(settings) + '\n';
+    log('Sending config: CFG:{...}', 'info');
     await writer.write(encoder.encode(cmd));
-    log('Settings written to device.', 'ok');
 
-    await delay(1000);
+    // Wait to confirm receipt
+    await delay(2000);
+
+    // Read response
+    try {
+      const { value } = await Promise.race([
+        reader.read(),
+        delay(1000).then(() => ({ value: null }))
+      ]);
+      if (value) {
+        const resp = new TextDecoder().decode(value);
+        log('ESP: ' + resp.trim(), resp.includes('saved') ? 'ok' : 'info');
+      }
+    } catch(_) {}
+
     writer.releaseLock();
-    reader.cancel();
+    try { reader.cancel(); } catch(_) {}
     reader.releaseLock();
     await serialPort.close();
 
+    log('Settings written successfully!', 'ok');
+
   } catch(e) {
-    // Settings write is best-effort; flash already succeeded
-    log('Note: Could not auto-write settings (' + e.message + '). Use the web UI at the device IP to configure.', 'warn');
-    log('The firmware is flashed — connect to http://<device-ip> after WiFi connects.', 'info');
+    log('Could not auto-write settings: ' + e.message, 'warn');
+    log('Use the Serial Monitor to send this command manually:', 'warn');
+    const cmd = 'CFG:{"ssid":"' + cfg.ssid + '","pass":"' + cfg.pass +
+      '","tahost":"' + cfg.taHost + '","taport":' + cfg.taPort +
+      ',"lname":"' + cfg.lName + '","devid":"' + cfg.devId +
+      '","cutbus":' + (cfg.cutBus?1:0) + ',"pinr":' + cfg.pinRed +
+      ',"ping":' + cfg.pinGreen + ',"static":0}';
+    log(cmd, 'warn');
   }
 }
 
