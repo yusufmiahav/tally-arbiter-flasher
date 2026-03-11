@@ -986,8 +986,7 @@ async function startFlash() {
 
     await espLoader.main();
     log('Chip detected: ' + espLoader.chip.CHIP_NAME, 'ok');
-    setProgress(15, 'Uploading stub...');
-    await espLoader.runStub();
+    setProgress(15, 'Changing baud rate...');
     await espLoader.changeBaud(921600);
     log('Changing baudrate to 921600', 'info');
     log('Changed', 'ok');
