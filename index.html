@@ -902,10 +902,14 @@ function getConfig() {
 //  Serial connect — just picks the port, does
 //  NOT open it. esptool-js opens it itself.
 // ══════════════════════════════════════════════
+// ══════════════════════════════════════════════
+//  Serial connect
+// ══════════════════════════════════════════════
 async function connectSerial() {
+  const btn = document.getElementById('btn-connect');
+  btn.disabled = true;
+  btn.textContent = 'Connecting...';
   try {
-    document.getElementById('hold-boot-warn').style.display = 'flex';
-    // Only request the port here — do NOT open it
     serialPort = await navigator.serial.requestPort();
     const info = serialPort.getInfo();
     log('Port selected. VID:0x' + (info.usbVendorId||0).toString(16).padStart(4,'0') +
@@ -913,12 +917,14 @@ async function connectSerial() {
     setBadge('port-badge', 'Port selected', 'ok');
     document.getElementById('btn-flash').disabled = false;
     document.getElementById('btn-cfg-only').disabled = false;
-    document.getElementById('btn-connect').textContent = '✓ Port Selected';
-    document.getElementById('btn-connect').disabled = true;
+    btn.textContent = '✓ Connected — click to change';
+    btn.disabled = false;
     setStep(2);
   } catch(e) {
+    btn.textContent = '⬡ Connect Device';
+    btn.disabled = false;
     if (e.name !== 'NotFoundError') {
-      log('Error: ' + e.message, 'error');
+      log('Connect error: ' + e.message, 'error');
       setBadge('port-badge', 'Error', 'error');
     } else {
       log('Port selection cancelled.', 'warn');
@@ -1289,8 +1295,9 @@ function resetFlasher() {
   document.getElementById('success-screen').classList.remove('show');
   document.getElementById('btn-flash').disabled = true;
   document.getElementById('btn-cfg-only').disabled = true;
-  document.getElementById('btn-connect').disabled = false;
-  document.getElementById('btn-connect').textContent = '⬡ Connect Device';
+  const btnConnect = document.getElementById('btn-connect');
+  btnConnect.disabled = false;
+  btnConnect.textContent = '⬡ Connect Device';
   document.getElementById('hold-boot-warn').style.display = 'none';
   setBadge('port-badge', 'Not connected', 'idle');
   document.getElementById('progress-wrap').classList.remove('show');
