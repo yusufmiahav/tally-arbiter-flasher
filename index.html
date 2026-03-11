@@ -1021,44 +1021,46 @@ async function startFlash() {
 
 // ══════════════════════════════════════════════
 //  Write settings via Serial after flash
+//  Requests a FRESH port — the original port is
+//  still locked by esptool-js transport layer
 // ══════════════════════════════════════════════
 async function writeNVSSettings(cfg) {
+  let cfgPort = null;
   try {
-    log('Waiting for device to boot...', 'info');
+    log('Firmware written. Waiting for device to reboot...', 'info');
+    await delay(4000);
 
-    // Give the ESP32 time to fully reboot and release the port
-    await delay(3000);
+    // Ask user to select the port again — browser security requires
+    // a fresh requestPort() after esptool-js has used the port
+    log('Please select the serial port again to write settings...', 'warn');
+    cfgPort = await navigator.serial.requestPort();
 
-    // Force close port in case esptool-js left it open
-    try { await serialPort.close(); } catch(_) {}
-    await delay(500);
+    // Close it if somehow open
+    try { await cfgPort.close(); } catch(_) {}
+    await delay(300);
 
-    log('Opening serial to write settings...', 'info');
-    await serialPort.open({ baudRate: 115200 });
+    await cfgPort.open({ baudRate: 115200 });
+    log('Serial open. Waiting for boot message...', 'info');
 
     const encoder = new TextEncoder();
-    const writer  = serialPort.writable.getWriter();
-    const reader  = serialPort.readable.getReader();
+    const writer  = cfgPort.writable.getWriter();
+    const reader  = cfgPort.readable.getReader();
 
-    // Read serial output and wait for any sign of life from the firmware
-    log('Waiting for firmware boot message...', 'info');
+    // Wait up to 8s for "Waiting for CFG" or "Booting" from firmware
     let buf = '';
     let gotBoot = false;
-    const deadline = Date.now() + 10000;
-
+    const deadline = Date.now() + 8000;
     while (Date.now() < deadline) {
       try {
-        const { value, done } = await Promise.race([
+        const { value } = await Promise.race([
           reader.read(),
-          delay(200).then(() => ({ value: null, done: false }))
+          delay(100).then(() => ({ value: null }))
         ]);
-        if (done) break;
         if (value) {
           const chunk = new TextDecoder().decode(value);
           buf += chunk;
-          // Log what we receive so user can see it
-          chunk.split('\n').forEach(l => { if(l.trim()) log('ESP: ' + l.trim(), 'dim'); });
-          if (buf.includes('Booting') || buf.includes('CFG') || buf.includes('Connecting')) {
+          chunk.split('\n').forEach(l => { if (l.trim()) log('← ' + l.trim(), 'dim'); });
+          if (buf.includes('Waiting for CFG') || buf.includes('Booting') || buf.includes('No WiFi')) {
             gotBoot = true;
             break;
           }
@@ -1066,11 +1068,13 @@ async function writeNVSSettings(cfg) {
       } catch(_) { break; }
     }
 
-    if (!gotBoot) {
-      log('Boot message not detected — sending config anyway...', 'warn');
+    if (gotBoot) {
+      log('Device ready — sending config...', 'ok');
+    } else {
+      log('Sending config (boot message not seen — sending anyway)...', 'warn');
     }
 
-    // Build and send CFG packet
+    // Build CFG packet
     const settings = {
       ssid:   cfg.ssid,
       pass:   cfg.pass,
@@ -1088,40 +1092,44 @@ async function writeNVSSettings(cfg) {
     };
 
     const cmd = 'CFG:' + JSON.stringify(settings) + '\n';
-    log('Sending config: CFG:{...}', 'info');
     await writer.write(encoder.encode(cmd));
+    log('Config sent!', 'ok');
 
-    // Wait to confirm receipt
-    await delay(2000);
-
-    // Read response
-    try {
-      const { value } = await Promise.race([
-        reader.read(),
-        delay(1000).then(() => ({ value: null }))
-      ]);
-      if (value) {
-        const resp = new TextDecoder().decode(value);
-        log('ESP: ' + resp.trim(), resp.includes('saved') ? 'ok' : 'info');
-      }
-    } catch(_) {}
+    // Read confirmation
+    const confirmDeadline = Date.now() + 4000;
+    while (Date.now() < confirmDeadline) {
+      try {
+        const { value } = await Promise.race([
+          reader.read(),
+          delay(100).then(() => ({ value: null }))
+        ]);
+        if (value) {
+          const resp = new TextDecoder().decode(value);
+          resp.split('\n').forEach(l => { if (l.trim()) log('← ' + l.trim(), l.includes('saved') ? 'ok' : 'dim'); });
+          if (resp.includes('saved') || resp.includes('Rebooting')) break;
+        }
+      } catch(_) { break; }
+    }
 
     writer.releaseLock();
     try { reader.cancel(); } catch(_) {}
     reader.releaseLock();
-    await serialPort.close();
+    await cfgPort.close();
 
-    log('Settings written successfully!', 'ok');
+    log('Settings saved! Device is rebooting and connecting to WiFi.', 'ok');
 
   } catch(e) {
-    log('Could not auto-write settings: ' + e.message, 'warn');
-    log('Use the Serial Monitor to send this command manually:', 'warn');
-    const cmd = 'CFG:{"ssid":"' + cfg.ssid + '","pass":"' + cfg.pass +
-      '","tahost":"' + cfg.taHost + '","taport":' + cfg.taPort +
-      ',"lname":"' + cfg.lName + '","devid":"' + cfg.devId +
-      '","cutbus":' + (cfg.cutBus?1:0) + ',"pinr":' + cfg.pinRed +
-      ',"ping":' + cfg.pinGreen + ',"static":0}';
-    log(cmd, 'warn');
+    if (e.name === 'NotFoundError') {
+      log('Port selection skipped — settings not written automatically.', 'warn');
+    } else {
+      log('Settings write error: ' + e.message, 'warn');
+    }
+    log('▶ To configure manually, open Serial Monitor at 115200 baud and send:', 'warn');
+    log('CFG:{"ssid":"' + cfg.ssid + '","pass":"' + cfg.pass + '","tahost":"' + cfg.taHost +
+        '","taport":' + cfg.taPort + ',"lname":"' + cfg.lName + '","devid":"' + cfg.devId +
+        '","cutbus":' + (cfg.cutBus?1:0) + ',"pinr":' + cfg.pinRed + ',"ping":' + cfg.pinGreen +
+        ',"static":0}', 'warn');
+    if (cfgPort) { try { await cfgPort.close(); } catch(_) {} }
   }
 }
 
