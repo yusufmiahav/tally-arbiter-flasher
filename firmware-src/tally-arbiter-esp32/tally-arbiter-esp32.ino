@@ -400,31 +400,25 @@ void handleRoot() {
 }
 
 void handleSave() {
-  bool changed = false;
-  if (webServer.hasArg("ssid") && webServer.arg("ssid").length() > 0) {
-    networkSSID = webServer.arg("ssid");
-    preferences.begin("tally-arbiter", false);
-    preferences.putString("ssid", networkSSID);
-    preferences.end();
-    changed = true;
-  }
-  if (webServer.hasArg("pass") && webServer.arg("pass").length() > 0) {
-    networkPass = webServer.arg("pass");
-    preferences.begin("tally-arbiter", false);
-    preferences.putString("pass", networkPass);
-    preferences.end();
-  }
+  // Read all args into local vars first
+  if (webServer.hasArg("ssid"))     networkSSID        = webServer.arg("ssid");
+  if (webServer.hasArg("pass"))     networkPass        = webServer.arg("pass");
   if (webServer.hasArg("host"))     tallyarbiter_host  = webServer.arg("host");
   if (webServer.hasArg("port"))     tallyarbiter_port  = webServer.arg("port").toInt();
   if (webServer.hasArg("deviceid")) DeviceId           = webServer.arg("deviceid");
   if (webServer.hasArg("lname"))    listenerDeviceName = webServer.arg("lname");
 
+  // Save everything in one atomic open/close
   preferences.begin("tally-arbiter", false);
-  preferences.putString("tahost",  tallyarbiter_host);
-  preferences.putInt   ("taport",  tallyarbiter_port);
+  preferences.putString("ssid",     networkSSID);
+  preferences.putString("pass",     networkPass);
+  preferences.putString("tahost",   tallyarbiter_host);
+  preferences.putInt   ("taport",   tallyarbiter_port);
   preferences.putString("deviceid", DeviceId);
-  preferences.putString("lname",   listenerDeviceName);
+  preferences.putString("lname",    listenerDeviceName);
   preferences.end();
+
+  Serial.println("Web save: tahost=" + tallyarbiter_host + " taport=" + String(tallyarbiter_port));
 
   webServer.send(200, "text/plain", "Saved! Rebooting...");
   delay(1500);
