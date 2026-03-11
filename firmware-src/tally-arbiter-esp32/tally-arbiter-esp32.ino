@@ -96,7 +96,13 @@ void checkSerialConfig() {
     return;
   }
 
-  Serial.println("CFG received — saving to NVS...");
+  Serial.println("CFG received — clearing old config and saving...");
+
+  // Clear ALL old values first so stale WiFi/TA settings don't persist
+  preferences.begin("tally-arbiter", false);
+  preferences.clear();
+  preferences.end();
+
   preferences.begin("tally-arbiter", false);
 
   if (cfg.containsKey("ssid"))   preferences.putString("ssid",   cfg["ssid"].as<String>());
