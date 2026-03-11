@@ -969,26 +969,25 @@ async function startFlash() {
 
     log('Writing ' + flashFiles.length + ' file(s) to flash...', 'info');
 
-    // writeFlash(fileArray, flashSize, flashMode, flashFreq, eraseAll, compress, reportProgress, calculateMD5Hash)
     const fileArray = flashFiles.map(f => ({
       data:    espLoader.ui8ToBstr(new Uint8Array(f.data)),
       address: f.address
     }));
 
-    await espLoader.writeFlash(
+    await espLoader.writeFlash({
       fileArray,
-      'detect',  // flashSize — "detect" works on all boards
-      'dio',     // flashMode
-      '80m',     // flashFreq
-      false,     // eraseAll
-      true,      // compress
-      (fileIndex, written, total) => {
+      flashSize:  "keep",
+      flashMode:  "keep",
+      flashFreq:  "keep",
+      eraseAll:   false,
+      compress:   true,
+      reportProgress: (fileIndex, written, total) => {
         const pct = 20 + (written / total) * 75;
         setProgress(pct,
           'Writing ' + flashFiles[fileIndex].name + '... ' +
           Math.round(written/1024) + '/' + Math.round(total/1024) + ' KB');
       }
-    );
+    });
 
     setProgress(90, 'Saving settings to NVS...');
     log('Flashing complete. Writing settings...', 'ok');
