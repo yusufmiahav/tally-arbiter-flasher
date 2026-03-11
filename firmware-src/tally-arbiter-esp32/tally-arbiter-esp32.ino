@@ -234,7 +234,7 @@ void socket_event(socketIOmessageType_t type, uint8_t* payload, size_t length) {
       break;
 
     case sIOtype_DISCONNECT:
-      addLog("Socket.IO disconnected.");
+      if (!socketPaused) addLog("Socket.IO disconnected.");
       socketConnected = false;
       pendingRegister = false;
       break;
@@ -325,7 +325,7 @@ void connectToServer() {
 /* ── Web server ── */
 void handleRoot() {
   String p;
-  p.reserve(5120);
+  p.reserve(2048);
   p += "<!DOCTYPE html><html><head>"
        "<meta charset=UTF-8><meta name=viewport content='width=device-width,initial-scale=1'>"
        "<title>Tally Arbiter ESP32</title>"
@@ -537,4 +537,6 @@ void loop() {
     pendingRegister = false;
     doRegister();
   }
+
+  delay(1); // yield to RTOS — prevents watchdog crash under heavy load
 }
