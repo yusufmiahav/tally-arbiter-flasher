@@ -909,8 +909,8 @@ async function startFlash() {
     log('Fetching firmware binary...', 'info');
     setProgress(5, 'Downloading firmware...');
 
-    const fwRes = await fetch('./firmware/tally-arbiter-esp32.bin');
-    if (!fwRes.ok) throw new Error('Could not fetch firmware binary (HTTP ' + fwRes.status + '). Make sure firmware/tally-arbiter-esp32.bin exists in the repo.');
+    const fwRes = await fetch('./firmware/tally-arbiter-esp32.ino.bin');
+    if (!fwRes.ok) throw new Error('Could not fetch firmware binary (HTTP ' + fwRes.status + '). Make sure firmware/tally-arbiter-esp32.ino.bin exists in the repo.');
     const fwBuffer = await fwRes.arrayBuffer();
     log('Firmware: ' + (fwBuffer.byteLength / 1024).toFixed(1) + ' KB', 'ok');
     setProgress(15, 'Connecting to ESP32...');
@@ -951,8 +951,8 @@ async function startFlash() {
     }];
 
     // Also write bootloader & partition table (required for fresh flash)
-    const blRes  = await fetch('./firmware/bootloader.bin');
-    const ptRes  = await fetch('./firmware/partitions.bin');
+    const blRes  = await fetch('./firmware/tally-arbiter-esp32.ino.bootloader.bin');
+    const ptRes  = await fetch('./firmware/tally-arbiter-esp32.ino.partitions.bin');
     const blBuf  = blRes.ok  ? await blRes.arrayBuffer()  : null;
     const ptBuf  = ptRes.ok  ? await ptRes.arrayBuffer()  : null;
 
