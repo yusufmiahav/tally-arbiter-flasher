@@ -3,7 +3,7 @@
 A browser-based flasher for the Tally Arbiter ESP32 listener firmware.  
 No Arduino IDE required — plug in your ESP32, fill in your settings, click Flash.
 
-**Live flasher → `https://YOUR-USERNAME.github.io/tally-arbiter-flasher`**
+**Live flasher → `https://yusufmiahav.github.io/tally-arbiter-flasher`**
 
 ---
 
@@ -44,7 +44,7 @@ tally-arbiter-flasher/
 ```bash
 # Create a new repo called: tally-arbiter-flasher
 # Then clone it locally
-git clone https://github.com/YOUR-USERNAME/tally-arbiter-flasher.git
+git clone https://github.com/yusufmiahav/tally-arbiter-flasher.git
 cd tally-arbiter-flasher
 ```
 
