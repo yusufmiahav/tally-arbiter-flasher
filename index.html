@@ -757,6 +757,46 @@ h1 {
 
   </div><!-- /main-content -->
 
+  <!-- Serial Monitor -->
+  <div id="monitor-section" style="max-width:680px;margin:2rem auto 0;padding:0 1rem;">
+    <div class="card" style="display:block;">
+      <div class="card-label">// Serial Monitor</div>
+      <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.75rem;flex-wrap:wrap;">
+        <button class="btn btn-ghost" id="btn-monitor-connect" onclick="monitorConnect()" style="flex:1;min-width:140px;">
+          ⬡ Connect Monitor
+        </button>
+        <button class="btn btn-ghost" id="btn-monitor-disconnect" onclick="monitorDisconnect()" disabled style="flex:1;min-width:140px;border-color:#e05;color:#e05;">
+          ✕ Disconnect
+        </button>
+        <button class="btn btn-ghost" onclick="clearMonitor()" style="flex:1;min-width:100px;">
+          ⌫ Clear
+        </button>
+        <select id="monitor-baud" style="font-family:var(--mono);font-size:0.7rem;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:0.4rem 0.5rem;">
+          <option value="9600">9600</option>
+          <option value="115200" selected>115200</option>
+          <option value="921600">921600</option>
+        </select>
+        <span id="monitor-badge" class="badge badge-idle" style="margin-left:auto;">Disconnected</span>
+      </div>
+      <div id="monitor-terminal" style="
+        background:var(--bg);
+        border:1px solid var(--border);
+        border-radius:6px;
+        padding:0.75rem;
+        font-family:var(--mono);
+        font-size:0.65rem;
+        color:#aaa;
+        height:260px;
+        overflow-y:auto;
+        white-space:pre-wrap;
+        word-break:break-all;
+        line-height:1.6;
+      "><span style="color:var(--muted)">// Serial monitor output will appear here.
+// Connect to your ESP32 and press EN/RST to see boot messages.</span>
+</div>
+    </div>
+  </div>
+
   <!-- Footer -->
   <div style="text-align:center;margin-top:3rem;font-family:var(--mono);font-size:0.58rem;color:var(--muted);letter-spacing:0.15em;line-height:2;">
     TALLY ARBITER ESP32 FLASHER &mdash; OPEN SOURCE<br>
@@ -1145,7 +1185,79 @@ async function writeNVSSettings(cfg) {
 // ══════════════════════════════════════════════
 //  Helpers
 // ══════════════════════════════════════════════
-function delay(ms) {
+// ══════════════════════════════════════════════
+//  Serial Monitor
+// ══════════════════════════════════════════════
+let monitorPort   = null;
+let monitorReader = null;
+let monitorActive = false;
+
+function monitorLog(text) {
+  const t = document.getElementById('monitor-terminal');
+  t.textContent += text;
+  t.scrollTop = t.scrollHeight;
+}
+
+function clearMonitor() {
+  document.getElementById('monitor-terminal').textContent = '';
+}
+
+function setMonitorBadge(text, type) {
+  const b = document.getElementById('monitor-badge');
+  b.textContent = text;
+  b.className = 'badge badge-' + type;
+}
+
+async function monitorConnect() {
+  try {
+    monitorPort = await navigator.serial.requestPort();
+    const baud = parseInt(document.getElementById('monitor-baud').value);
+    await monitorPort.open({ baudRate: baud });
+
+    monitorActive = true;
+    setMonitorBadge('Connected', 'ok');
+    document.getElementById('btn-monitor-connect').disabled = true;
+    document.getElementById('btn-monitor-disconnect').disabled = false;
+    document.getElementById('monitor-baud').disabled = true;
+    monitorLog('\n// Connected at ' + baud + ' baud. Press EN/RST on your ESP32.\n\n');
+
+    // Read loop
+    monitorReader = monitorPort.readable.getReader();
+    const decoder = new TextDecoder();
+    while (monitorActive) {
+      try {
+        const { value, done } = await monitorReader.read();
+        if (done || !monitorActive) break;
+        if (value) monitorLog(decoder.decode(value));
+      } catch(_) { break; }
+    }
+  } catch(e) {
+    if (e.name !== 'NotFoundError') {
+      monitorLog('\n// Error: ' + e.message + '\n');
+    }
+    monitorDisconnect();
+  }
+}
+
+async function monitorDisconnect() {
+  monitorActive = false;
+  if (monitorReader) {
+    try { await monitorReader.cancel(); } catch(_) {}
+    try { monitorReader.releaseLock(); } catch(_) {}
+    monitorReader = null;
+  }
+  if (monitorPort) {
+    try { await monitorPort.close(); } catch(_) {}
+    monitorPort = null;
+  }
+  setMonitorBadge('Disconnected', 'idle');
+  document.getElementById('btn-monitor-connect').disabled = false;
+  document.getElementById('btn-monitor-disconnect').disabled = true;
+  document.getElementById('monitor-baud').disabled = false;
+  monitorLog('\n// Disconnected.\n');
+}
+
+
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
