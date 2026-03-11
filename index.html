@@ -992,8 +992,8 @@ async function startFlash() {
     setProgress(90, 'Saving settings to NVS...');
     log('Flashing complete. Writing settings...', 'ok');
 
-    await espLoader.hard_reset();
-    await transport.disconnect();
+    try { await espLoader.softReset(); } catch(_) {}
+    try { await transport.disconnect(); } catch(_) {}
 
     // ── 3. Re-open port at 115200 and write NVS via Serial ──
     await delay(2000); // wait for reboot
