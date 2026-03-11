@@ -985,7 +985,6 @@ async function startFlash() {
     });
 
     await espLoader.main();
-    const chip = await espLoader.get_flash_size();
     log('Chip detected: ' + espLoader.chip.CHIP_NAME, 'ok');
     setProgress(15, 'Uploading stub...');
     await espLoader.runStub();
