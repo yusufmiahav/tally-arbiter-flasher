@@ -400,9 +400,11 @@ void handleRoot() {
 }
 
 void handleSave() {
-  // Read all args into local vars first
-  if (webServer.hasArg("ssid"))     networkSSID        = webServer.arg("ssid");
-  if (webServer.hasArg("pass"))     networkPass        = webServer.arg("pass");
+  // Only overwrite ssid/pass if actually provided — prevents blanking WiFi on TA-only changes
+  if (webServer.hasArg("ssid") && webServer.arg("ssid").length() > 0)
+    networkSSID = webServer.arg("ssid");
+  if (webServer.hasArg("pass") && webServer.arg("pass").length() > 0)
+    networkPass = webServer.arg("pass");
   if (webServer.hasArg("host"))     tallyarbiter_host  = webServer.arg("host");
   if (webServer.hasArg("port"))     tallyarbiter_port  = webServer.arg("port").toInt();
   if (webServer.hasArg("deviceid")) DeviceId           = webServer.arg("deviceid");
