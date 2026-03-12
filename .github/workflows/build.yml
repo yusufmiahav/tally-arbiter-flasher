@@ -1,4 +1,4 @@
-name: Build ESP32 Firmware
+name: Build Firmware
 
 on:
   push:
@@ -9,9 +9,12 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
 
+  # ─────────────────────────────────────
+  #  ESP32
+  # ─────────────────────────────────────
+  build-esp32:
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -27,7 +30,7 @@ jobs:
           arduino-cli core update-index
           arduino-cli core install esp32:esp32@2.0.14
 
-      - name: Install required libraries
+      - name: Install libraries
         run: |
           arduino-cli lib install "WebSockets@2.4.1"
           arduino-cli lib install "ArduinoJson@6.21.3"
@@ -36,19 +39,65 @@ jobs:
         run: |
           arduino-cli compile \
             --fqbn esp32:esp32:esp32 \
-            --output-dir ./build \
+            --output-dir ./build-esp32 \
             ./firmware-src/tally-arbiter-esp32
 
-      - name: Copy binaries to firmware folder
+      - name: Copy binaries
         run: |
           mkdir -p firmware
-          cp build/tally-arbiter-esp32.ino.bin             firmware/tally-arbiter-esp32.ino.bin
-          cp build/tally-arbiter-esp32.ino.bootloader.bin  firmware/tally-arbiter-esp32.ino.bootloader.bin
-          cp build/tally-arbiter-esp32.ino.partitions.bin  firmware/tally-arbiter-esp32.ino.partitions.bin
+          cp build-esp32/tally-arbiter-esp32.ino.bin             firmware/tally-arbiter-esp32.ino.bin
+          cp build-esp32/tally-arbiter-esp32.ino.bootloader.bin  firmware/tally-arbiter-esp32.ino.bootloader.bin
+          cp build-esp32/tally-arbiter-esp32.ino.partitions.bin  firmware/tally-arbiter-esp32.ino.partitions.bin
 
-      - name: Commit firmware binaries
+      - name: Commit ESP32 binaries
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "ci: rebuild firmware binaries [skip ci]"
-          file_pattern: "firmware/*.bin"
+          commit_message: "ci: rebuild ESP32 firmware [skip ci]"
+          file_pattern: "firmware/tally-arbiter-esp32*"
+          push_options: '--force'
+
+  # ─────────────────────────────────────
+  #  ESP8266
+  # ─────────────────────────────────────
+  build-esp8266:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+
+      - name: Install ESP8266 platform
+        run: |
+          arduino-cli config init
+          arduino-cli config add board_manager.additional_urls \
+            https://arduino.esp8266.com/stable/package_esp8266com_index.json
+          arduino-cli core update-index
+          arduino-cli core install esp8266:esp8266@3.1.2
+
+      - name: Install libraries
+        run: |
+          arduino-cli lib install "WebSockets@2.4.1"
+          arduino-cli lib install "ArduinoJson@6.21.3"
+
+      - name: Build firmware
+        run: |
+          arduino-cli compile \
+            --fqbn esp8266:esp8266:nodemcuv2 \
+            --build-property "build.flash_size=4M" \
+            --build-property "build.flash_freq=40" \
+            --output-dir ./build-esp8266 \
+            ./firmware-src/tally-arbiter-esp8266
+
+      - name: Copy binary
+        run: |
+          mkdir -p firmware
+          cp build-esp8266/tally-arbiter-esp8266.ino.bin firmware/tally-arbiter-esp8266.ino.bin
+
+      - name: Commit ESP8266 binary
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "ci: rebuild ESP8266 firmware [skip ci]"
+          file_pattern: "firmware/tally-arbiter-esp8266*"
           push_options: '--force'
