@@ -4,6 +4,8 @@
 #include <ArduinoJson.h>
 #include <Preferences.h>
 #include <WebServer.h>
+#include "soc/soc.h"
+#include "soc/rtc_cntl_reg.h"
 
 /* ── Default config (overridden by web flasher or web UI) ── */
 #define RED_PIN    23
@@ -447,6 +449,9 @@ void handleSave() {
 
 /* ── Setup & Loop ── */
 void setup() {
+  // Disable brownout detector — prevents reboot loop on weak USB power
+  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
+
   Serial.begin(115200);
   delay(200);
 
@@ -494,6 +499,16 @@ void setup() {
 
   setCpuFrequencyMhz(80);
   addLog("Booting: " + listenerDeviceName);
+  addLog("WiFi: " + networkSSID);
+  addLog("TA: " + tallyarbiter_host + ":" + String(tallyarbiter_port));
+  addLog("Device: " + DeviceId);
+  Serial.println("=== Tally Arbiter ESP32 ===");
+  Serial.println("Listener : " + listenerDeviceName);
+  Serial.println("WiFi SSID: " + networkSSID);
+  Serial.println("TA Host  : " + tallyarbiter_host);
+  Serial.println("TA Port  : " + String(tallyarbiter_port));
+  Serial.println("Device ID: " + DeviceId);
+  Serial.println("===========================");
 
   // ── Listen for CFG packet from web flasher (2s window) ──
   // If no config has been flashed yet, wait briefly for the
