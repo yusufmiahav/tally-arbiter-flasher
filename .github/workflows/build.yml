@@ -17,10 +17,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Arduino CLI
-        uses: arduino/setup-arduino-cli@v2
+        uses: arduino/setup-arduino-cli@v3
 
       - name: Install ESP32 platform
         run: |
@@ -50,7 +50,7 @@ jobs:
           cp build-esp32/tally-arbiter-esp32.ino.partitions.bin  firmware/tally-arbiter-esp32.ino.partitions.bin
 
       - name: Commit ESP32 binaries
-        uses: stefanzweifel/git-auto-commit-action@v5
+        uses: stefanzweifel/git-auto-commit-action@v6
         with:
           commit_message: "ci: rebuild ESP32 firmware [skip ci]"
           file_pattern: "firmware/tally-arbiter-esp32*"
@@ -63,10 +63,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Arduino CLI
-        uses: arduino/setup-arduino-cli@v2
+        uses: arduino/setup-arduino-cli@v3
 
       - name: Install ESP8266 platform
         run: |
@@ -96,7 +96,7 @@ jobs:
           cp build-esp8266/tally-arbiter-esp8266.ino.bin firmware/tally-arbiter-esp8266.ino.bin
 
       - name: Commit ESP8266 binary
-        uses: stefanzweifel/git-auto-commit-action@v5
+        uses: stefanzweifel/git-auto-commit-action@v6
         with:
           commit_message: "ci: rebuild ESP8266 firmware [skip ci]"
           file_pattern: "firmware/tally-arbiter-esp8266*"
