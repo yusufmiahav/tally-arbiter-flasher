@@ -107,6 +107,7 @@ void evaluateMode() {
    ═══════════════════════════════════════════════════════ */
 void checkSerialConfig() {
   if (!Serial.available()) return;
+  Serial.setTimeout(5000); // wait up to 5s for the full line
   String line = Serial.readStringUntil('\n');
   line.trim();
   if (!line.startsWith("CFG:")) return;
