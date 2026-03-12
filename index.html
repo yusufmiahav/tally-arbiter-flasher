@@ -601,7 +601,7 @@ h1 {
     <div class="alert alert-info">
       <span class="alert-icon">ℹ</span>
       <div>
-        Fill in your WiFi and Tally Arbiter settings below, then connect your ESP32 via USB and click <strong>Connect Device</strong>. The firmware will be compiled with your settings and flashed directly to the device.
+        Fill in your WiFi and Tally Arbiter settings, then connect your ESP32 via USB. Use <strong>Flash Firmware</strong> to write the firmware, then <strong>Send Config to Device</strong> to write your settings — no Arduino IDE needed.
       </div>
     </div>
 
@@ -748,7 +748,7 @@ h1 {
         <span class="alert-icon">⚡</span>
         <div>
           <strong>Hold BOOT button</strong> on your ESP32 while clicking Connect, then release once the port appears. Some boards enter flash mode automatically.
-          <strong>Not needed for Config Only.</strong>
+          <strong>Not needed for Send Config to Device.</strong>
         </div>
       </div>
 
@@ -762,7 +762,7 @@ h1 {
       </div>
       <div class="btn-row" style="margin-top:0.5rem;">
         <button class="btn btn-ghost btn-full" id="btn-cfg-only" onclick="sendConfigOnly()" disabled style="border-color:var(--green);color:var(--green);">
-          ⟳ Update Config Only (no reflash)
+          ⟳ Send Config to Device
         </button>
       </div>
       <div class="btn-row" style="margin-top:0.5rem;gap:0.5rem;">
@@ -775,7 +775,7 @@ h1 {
       </div>
       <div class="hint" style="margin-top:0.5rem;">
         <strong>Erase Flash Only</strong> — wipes everything including corrupted NVS. Use when device is stuck in a reboot loop.<br>
-        <strong>Erase + Flash Fresh</strong> — full chip erase then reflash. Fixes crashes and writes new config in one go.
+        <strong>Erase + Flash Fresh</strong> — full chip erase then reflash. Use this to fix reboot loops or corrupted flash.
       </div>
 
       <!-- Progress -->
@@ -799,8 +799,8 @@ h1 {
     <!-- Success screen -->
     <div id="success-screen">
       <div class="success-icon">✓</div>
-      <div class="success-title">Firmware Flashed</div>
-      <div class="success-sub">One more step — send your settings.</div>
+      <div class="success-title">Firmware Written</div>
+      <div class="success-sub">Step 2 of 2 — send your settings to the device.</div>
       <div style="font-family:var(--mono);font-size:0.65rem;color:var(--muted);line-height:2;margin-bottom:1.25rem;">
         WiFi: <span id="done-ssid" style="color:var(--text)"></span> &nbsp;|&nbsp;
         TA: <span id="done-host" style="color:var(--text)"></span>
@@ -808,7 +808,7 @@ h1 {
 
       <div class="alert alert-warn" style="margin-bottom:1rem;text-align:left;">
         <span class="alert-icon">①</span>
-        <div>The device is now waiting for config. <strong>Scroll down</strong> to the flash panel and click <strong style="color:var(--green);">⟳ Update Config Only</strong> to send your WiFi and TA settings. Do not press EN/RST.</div>
+        <div>The device is now waiting for config. <strong>Scroll down</strong> to the flash panel and click <strong style="color:var(--green);">⟳ Send Config to Device</strong> to send your WiFi and TA settings. Do not press EN/RST.</div>
       </div>
 
       <!-- Live serial monitor -->
@@ -823,7 +823,7 @@ h1 {
 </div>
       </div>
 
-      <button class="btn btn-ghost" onclick="resetFlasher()">⟳ Flash Another Device</button>
+      <button class="btn btn-ghost" onclick="resetFlasher()">← Start Over</button>
     </div>
 
   </div><!-- /main-content -->
@@ -1073,7 +1073,7 @@ async function connectSerial() {
     if (e.name !== 'NotFoundError') {
       log('Connect error: ' + e.message, 'error');
     } else {
-      log('Port selection cancelled.', 'warn');
+      log('Port not selected — try again.', 'warn');
     }
   }
 }
@@ -1287,53 +1287,35 @@ async function writeNVSSettings(cfg) {
 }
 
 // ══════════════════════════════════════════════
-//  Config Only (no reflash)
+//  Send Config (no reflash) — also called after flash
 // ══════════════════════════════════════════════
 async function sendConfigOnly() {
   var cfg = getConfig();
-  if (!cfg.ssid)   { log('WiFi SSID is required.', 'error'); return; }
-  if (!cfg.taHost) { log('Tally Arbiter IP is required.', 'error'); return; }
+  if (cfg.errors.length > 0) { cfg.errors.forEach(function(e) { log(e, 'error'); }); return; }
 
-  document.getElementById('btn-cfg-only').disabled = true;
-  document.getElementById('btn-flash').disabled = true;
-  log('Config-only mode — no firmware flash.', 'heading');
+  log('─── Send Config ───', 'heading');
+  log('SSID: ' + cfg.ssid + '  TA: ' + cfg.taHost + ':' + cfg.taPort, 'info');
 
   var cfgPort = null;
   try {
+    document.getElementById('btn-cfg-only').disabled = true;
+
     cfgPort = await navigator.serial.requestPort();
     try { await cfgPort.close(); } catch(_) {}
-    await delay(200);
+    await delay(300);
     await cfgPort.open({ baudRate: 115200 });
-    log('Port open. Waiting for device...', 'info');
+    log('Port open.', 'ok');
     setBadge('port-badge', 'Sending config...', 'warn');
 
     var encoder = new TextEncoder();
     var writer  = cfgPort.writable.getWriter();
     var reader  = cfgPort.readable.getReader();
-    var buf = '';
-    var gotBoot = false;
-    var deadline = Date.now() + 10000;
-
-    while (Date.now() < deadline) {
-      try {
-        var rr = await Promise.race([reader.read(), delay(100).then(function() { return { value: null }; })]);
-        if (rr.value) {
-          var chunk = new TextDecoder().decode(rr.value);
-          buf += chunk;
-          if (buf.indexOf('Waiting for CFG') >= 0 || buf.indexOf('Booting') >= 0 ||
-              buf.indexOf('No WiFi') >= 0 || buf.indexOf('Connecting') >= 0) {
-            gotBoot = true; break;
-          }
-        }
-      } catch(_) { break; }
-    }
-
-    if (gotBoot) log('Device ready — sending new config...', 'ok');
-    else log('Sending config (device not detected in time)...', 'warn');
 
     var settings = {
-      ssid: cfg.ssid, pass: cfg.pass, tahost: cfg.taHost, taport: cfg.taPort,
-      lname: cfg.lName, devid: cfg.devId, cutbus: cfg.cutBus ? 1 : 0,
+      ssid: cfg.ssid, pass: cfg.pass,
+      tahost: cfg.taHost, taport: cfg.taPort,
+      lname: cfg.lName, devid: cfg.devId,
+      cutbus: cfg.cutBus ? 1 : 0,
       pinr: cfg.pinRed, ping: cfg.pinGreen,
       ledtype: cfg.ledType, pinrgbr: cfg.pinRgbR, pinrgbg: cfg.pinRgbG, pinrgbb: cfg.pinRgbB,
       rgbanode: cfg.rgbAnode ? 1 : 0,
@@ -1342,37 +1324,52 @@ async function sendConfigOnly() {
     };
 
     var cmd = 'CFG:' + JSON.stringify(settings) + '\n';
-    await writer.write(encoder.encode(cmd));
-    log('Config sent!', 'ok');
+    log('Sending ' + (cmd.length - 5) + ' byte config packet...', 'info');
 
-    var confDeadline = Date.now() + 5000;
+    // Send immediately — no boot-message wait
+    // Device firmware loops on checkSerialConfig() with 5s readline timeout
+    await writer.write(encoder.encode(cmd));
+    log('Packet sent. Waiting for confirmation...', 'ok');
+
+    // Read up to 8s for confirmation
+    var confBuf = '';
+    var confDeadline = Date.now() + 8000;
     while (Date.now() < confDeadline) {
       try {
-        var cr = await Promise.race([reader.read(), delay(100).then(function() { return { value: null }; })]);
+        var cr = await Promise.race([
+          reader.read(),
+          delay(100).then(function() { return { value: null }; })
+        ]);
         if (cr.value) {
           var resp = new TextDecoder().decode(cr.value);
-          if (resp.indexOf('saved') >= 0 || resp.indexOf('Rebooting') >= 0) {
-            log('Device confirmed: ' + resp.trim(), 'ok'); break;
-          }
+          confBuf += resp;
+          resp.split('\n').forEach(function(l) {
+            if (l.trim()) log('← ' + l.trim(), l.indexOf('saved') >= 0 || l.indexOf('CFG') >= 0 ? 'ok' : 'dim');
+          });
+          if (confBuf.indexOf('CFG saved') >= 0 || confBuf.indexOf('Rebooting') >= 0) break;
         }
       } catch(_) { break; }
     }
 
     writer.releaseLock();
     try { reader.cancel(); } catch(_) {}
-    reader.releaseLock();
-    await cfgPort.close();
-    setBadge('port-badge', 'Config written!', 'ok');
-    log('Device rebooting with new settings.', 'ok');
+    try { reader.releaseLock(); } catch(_) {}
+    try { await cfgPort.close(); } catch(_) {}
+
+    if (confBuf.indexOf('CFG saved') >= 0 || confBuf.indexOf('Rebooting') >= 0) {
+      setBadge('port-badge', 'Config saved!', 'ok');
+      log('✓ Config saved — device rebooting.', 'ok');
+    } else {
+      setBadge('port-badge', 'No confirmation', 'error');
+      log('No confirmation received. Check serial monitor for errors and try again.', 'warn');
+    }
 
   } catch(e) {
-    if (e.name !== 'NotFoundError') log('Config error: ' + e.message, 'error');
-    else log('Port selection cancelled.', 'warn');
-    setBadge('port-badge', 'Not connected', 'idle');
+    if (e.name === 'NotFoundError') log('Port not selected — try again.', 'warn');
+    else log('Config error: ' + e.message, 'error');
     if (cfgPort) { try { await cfgPort.close(); } catch(_) {} }
   } finally {
     document.getElementById('btn-cfg-only').disabled = false;
-    document.getElementById('btn-flash').disabled = false;
   }
 }
 
