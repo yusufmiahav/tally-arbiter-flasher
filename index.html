@@ -680,17 +680,59 @@ h1 {
     <!-- Step 3: Hardware Config -->
     <div class="card" id="card-hw">
       <div class="card-label">// 03 &mdash; Hardware Pins</div>
-      <div class="row2">
-        <div class="field">
-          <label>Red LED Pin (Program)</label>
-          <input type="number" id="pin-red" value="23">
-        </div>
-        <div class="field">
-          <label>Green LED Pin (Preview)</label>
-          <input type="number" id="pin-green" value="22">
+
+      <div class="toggle-row" style="margin-bottom:1rem;">
+        <span class="toggle-label">LED Type</span>
+        <div style="display:flex;gap:0.5rem;">
+          <button class="btn btn-ghost" id="btn-led-2pin" onclick="setLedType('2pin')" style="padding:0.3rem 0.8rem;font-size:0.7rem;border-color:var(--red);color:var(--red);">
+            ● 2-Pin (Red + Green)
+          </button>
+          <button class="btn btn-ghost" id="btn-led-rgb" onclick="setLedType('rgb')" style="padding:0.3rem 0.8rem;font-size:0.7rem;">
+            ◉ 4-Pin RGB
+          </button>
         </div>
       </div>
-      <div class="hint" style="margin-top:0.25rem;">Default pins match the standard ESP32 DevKit wiring. Change only if your hardware differs.</div>
+
+      <!-- 2-pin fields -->
+      <div id="pins-2pin">
+        <div class="row2">
+          <div class="field">
+            <label>Red LED Pin (Program)</label>
+            <input type="number" id="pin-red" value="23">
+          </div>
+          <div class="field">
+            <label>Green LED Pin (Preview)</label>
+            <input type="number" id="pin-green" value="22">
+          </div>
+        </div>
+        <div class="hint" style="margin-top:0.25rem;">Two separate LEDs — one red, one green, each with a 220Ω resistor.</div>
+      </div>
+
+      <!-- RGB 4-pin fields -->
+      <div id="pins-rgb" style="display:none;">
+        <div class="row2">
+          <div class="field">
+            <label>Red Pin</label>
+            <input type="number" id="pin-rgb-r" value="23">
+          </div>
+          <div class="field">
+            <label>Green Pin</label>
+            <input type="number" id="pin-rgb-g" value="22">
+          </div>
+          <div class="field">
+            <label>Blue Pin</label>
+            <input type="number" id="pin-rgb-b" value="21">
+          </div>
+        </div>
+        <div class="toggle-row" style="margin-top:0.75rem;">
+          <span class="toggle-label">Common Anode (most 4-pin RGB LEDs)</span>
+          <label class="toggle">
+            <input type="checkbox" id="rgb-common-anode" checked>
+            <span class="toggle-track"></span>
+          </label>
+        </div>
+        <div class="hint" style="margin-top:0.25rem;">Common Anode = 4th pin to 3.3V, logic inverted. Common Cathode = 4th pin to GND, normal logic. Each colour pin needs a 220Ω resistor.</div>
+      </div>
     </div>
 
     <!-- Step 4: Connect & Flash -->
@@ -959,8 +1001,13 @@ function getConfig() {
   const lName     = document.getElementById('listener-name').value.trim() || ('esp32-tally-' + Date.now().toString(16).slice(-6));
   const devId     = document.getElementById('device-id').value.trim() || 'unassigned';
   const cutBus    = document.getElementById('cut-bus').checked;
+  const ledType   = document.getElementById('pins-rgb').style.display === 'none' ? '2pin' : 'rgb';
   const pinRed    = parseInt(document.getElementById('pin-red').value) || 23;
   const pinGreen  = parseInt(document.getElementById('pin-green').value) || 22;
+  const pinRgbR   = parseInt(document.getElementById('pin-rgb-r').value) || 23;
+  const pinRgbG   = parseInt(document.getElementById('pin-rgb-g').value) || 22;
+  const pinRgbB   = parseInt(document.getElementById('pin-rgb-b').value) || 21;
+  const rgbAnode  = document.getElementById('rgb-common-anode').checked;
   const useStatic = document.getElementById('use-static').checked;
   const staticIp  = document.getElementById('static-ip').value.trim() || '192.168.1.100';
   const staticGw  = document.getElementById('static-gw').value.trim() || '192.168.1.1';
@@ -968,8 +1015,19 @@ function getConfig() {
   const errors = [];
   if (!ssid)   errors.push('WiFi SSID is required.');
   if (!taHost) errors.push('Tally Arbiter IP is required.');
-  return { ssid, pass, taHost, taPort, lName, devId, cutBus, pinRed, pinGreen,
+  return { ssid, pass, taHost, taPort, lName, devId, cutBus,
+           ledType, pinRed, pinGreen, pinRgbR, pinRgbG, pinRgbB, rgbAnode,
            useStatic, staticIp, staticGw, staticSn, errors };
+}
+
+function setLedType(type) {
+  var is2pin = type === '2pin';
+  document.getElementById('pins-2pin').style.display = is2pin ? 'block' : 'none';
+  document.getElementById('pins-rgb').style.display  = is2pin ? 'none'  : 'block';
+  document.getElementById('btn-led-2pin').style.borderColor = is2pin ? 'var(--red)' : '';
+  document.getElementById('btn-led-2pin').style.color       = is2pin ? 'var(--red)' : '';
+  document.getElementById('btn-led-rgb').style.borderColor  = is2pin ? '' : 'var(--red)';
+  document.getElementById('btn-led-rgb').style.color        = is2pin ? '' : 'var(--red)';
 }
 
 // ══════════════════════════════════════════════
@@ -1127,37 +1185,30 @@ async function startFlash() {
 
 // ══════════════════════════════════════════════
 //  Write NVS Settings via Serial after flash
+//  Must request a fresh port — esptool-js holds
+//  the original port and close() doesn't release it
 // ══════════════════════════════════════════════
 async function writeNVSSettings(cfg) {
+  var cfgPort = null;
   try {
-    log('Waiting for device to reboot...', 'info');
-    await delay(5000); // give esptool time to fully release the port
+    log('Firmware written. Waiting for device to reboot...', 'info');
+    await delay(3000);
 
-    // Try multiple times to open — port may take a moment to release
-    var opened = false;
-    for (var attempt = 0; attempt < 5; attempt++) {
-      try {
-        try { await serialPort.close(); } catch(_) {}
-        await delay(600);
-        await serialPort.open({ baudRate: 115200 });
-        opened = true;
-        break;
-      } catch(e) {
-        log('Port open attempt ' + (attempt+1) + ' failed, retrying...', 'dim');
-        await delay(800);
-      }
-    }
+    // esptool-js keeps an internal lock on serialPort that persists
+    // even after transport.disconnect(). We must request a fresh port.
+    log('Select the serial port again to send config...', 'warn');
+    setBadge('port-badge', 'Select port for config...', 'warn');
 
-    if (!opened) {
-      log('Could not reopen port — use Update Config Only to send settings.', 'warn');
-      return;
-    }
+    cfgPort = await navigator.serial.requestPort();
 
-    log('Serial open. Waiting for boot message...', 'info');
+    try { await cfgPort.close(); } catch(_) {}
+    await delay(400);
+    await cfgPort.open({ baudRate: 115200 });
+    log('Port open. Waiting for "Waiting for CFG"...', 'info');
 
     var encoder = new TextEncoder();
-    var writer  = serialPort.writable.getWriter();
-    var reader  = serialPort.readable.getReader();
+    var writer  = cfgPort.writable.getWriter();
+    var reader  = cfgPort.readable.getReader();
 
     var buf = '';
     var gotBoot = false;
@@ -1180,7 +1231,7 @@ async function writeNVSSettings(cfg) {
     }
 
     if (gotBoot) log('Device ready — sending config...', 'ok');
-    else log('Sending config (boot message not seen)...', 'warn');
+    else log('Sending config (boot message not seen — sending anyway)...', 'warn');
 
     var settings = {
       ssid: cfg.ssid, pass: cfg.pass,
@@ -1188,12 +1239,14 @@ async function writeNVSSettings(cfg) {
       lname: cfg.lName, devid: cfg.devId,
       cutbus: cfg.cutBus ? 1 : 0,
       pinr: cfg.pinRed, ping: cfg.pinGreen,
+      ledtype: cfg.ledType, pinrgbr: cfg.pinRgbR, pinrgbg: cfg.pinRgbG, pinrgbb: cfg.pinRgbB,
+      rgbanode: cfg.rgbAnode ? 1 : 0,
       'static': cfg.useStatic ? 1 : 0,
       sip: cfg.staticIp, sgw: cfg.staticGw, ssn: cfg.staticSn
     };
 
     var cmd = 'CFG:' + JSON.stringify(settings) + '\n';
-    log('Sending: CFG:{ssid:"' + cfg.ssid + '", tahost:"' + cfg.taHost + '", ...}', 'info');
+    log('Sending: CFG:{ssid:"' + cfg.ssid + '", tahost:"' + cfg.taHost + '", ledtype:"' + cfg.ledType + '", ...}', 'info');
     await writer.write(encoder.encode(cmd));
     log('Config sent!', 'ok');
 
@@ -1217,12 +1270,17 @@ async function writeNVSSettings(cfg) {
     writer.releaseLock();
     try { reader.cancel(); } catch(_) {}
     reader.releaseLock();
-    try { await serialPort.close(); } catch(_) {}
+    try { await cfgPort.close(); } catch(_) {}
     log('Settings saved! Device rebooting with new config.', 'ok');
 
   } catch(e) {
-    log('Settings write error: ' + e.message, 'warn');
-    log('Use "Update Config Only" button to send settings manually.', 'warn');
+    if (e.name === 'NotFoundError') {
+      log('Port selection skipped — use "Update Config Only" to send settings.', 'warn');
+    } else {
+      log('Settings write error: ' + e.message, 'warn');
+      log('Use "Update Config Only" to send settings manually.', 'warn');
+    }
+    if (cfgPort) { try { await cfgPort.close(); } catch(_) {} }
   }
 }
 
@@ -1275,6 +1333,8 @@ async function sendConfigOnly() {
       ssid: cfg.ssid, pass: cfg.pass, tahost: cfg.taHost, taport: cfg.taPort,
       lname: cfg.lName, devid: cfg.devId, cutbus: cfg.cutBus ? 1 : 0,
       pinr: cfg.pinRed, ping: cfg.pinGreen,
+      ledtype: cfg.ledType, pinrgbr: cfg.pinRgbR, pinrgbg: cfg.pinRgbG, pinrgbb: cfg.pinRgbB,
+      rgbanode: cfg.rgbAnode ? 1 : 0,
       'static': cfg.useStatic ? 1 : 0,
       sip: cfg.staticIp, sgw: cfg.staticGw, ssn: cfg.staticSn
     };
