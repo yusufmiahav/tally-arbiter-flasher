@@ -4,7 +4,7 @@
 #include <ArduinoJson.h>
 #include <Preferences.h>
 #include <WebServer.h>
-#include <esp_partition.h>
+#include <esp_flash.h>
 #include "soc/soc.h"
 #include "soc/rtc_cntl_reg.h"
 
@@ -478,12 +478,11 @@ void handleSave() {
 }
 
 /* ── Flash config reader ── */
-// Reads config JSON blob written by web flasher to 0x3D000
-// If valid magic found: saves to NVS, erases sector, reboots
-// Only runs on first boot after flashing — erases itself so it never repeats
 bool applyFlashConfig() {
   uint8_t buf[2048] = {0};
-  esp_err_t err = spi_flash_read(CONFIG_FLASH_ADDR, buf, sizeof(buf));
+
+  // Use esp_flash_read with NULL = default flash chip
+  esp_err_t err = esp_flash_read(NULL, buf, CONFIG_FLASH_ADDR, sizeof(buf));
   if (err != ESP_OK) return false;
 
   uint32_t magic;
@@ -520,7 +519,8 @@ bool applyFlashConfig() {
   if (cfg.containsKey("ssn"))      preferences.putString("ssn",       cfg["ssn"].as<String>());
   preferences.end();
 
-  spi_flash_erase_sector(CONFIG_FLASH_ADDR / SPI_FLASH_SEC_SIZE);
+  // Erase the sector so config doesn't re-apply on next boot
+  esp_flash_erase_region(NULL, CONFIG_FLASH_ADDR, 4096);
   Serial.println("Flash config applied. Rebooting...");
   delay(300);
   ESP.restart();
@@ -533,7 +533,7 @@ void setup() {
   WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
 
   Serial.begin(115200);
-  delay(200);
+  delay(500); // extra delay to ensure serial is ready before applyFlashConfig prints
 
   // Check if web flasher wrote a config blob to flash — apply it first if so
   // (this reboots the device, so code below only runs on clean boots)
