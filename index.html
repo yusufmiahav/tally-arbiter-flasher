@@ -283,7 +283,13 @@ h1{font-family:var(--mono);font-size:clamp(1.4rem,4vw,2rem);letter-spacing:.18em
     </button>
   </div>
 
-  <p style="text-align:center;margin-top:3rem;font-family:var(--mono);font-size:.55rem;color:var(--muted);letter-spacing:.15em;line-height:2">
+  <div style="text-align:center;margin-top:1rem">
+    <button class="btn btn-ghost" onclick="goTo(5)" style="font-size:.72rem;opacity:.6;border-color:var(--border);color:var(--muted)">
+      ⬡ Serial Monitor
+    </button>
+  </div>
+
+  <p style="text-align:center;margin-top:2.5rem;font-family:var(--mono);font-size:.55rem;color:var(--muted);letter-spacing:.15em;line-height:2">
     TALLY ARBITER ESP32 FLASHER &mdash; OPEN SOURCE &mdash; REQUIRES CHROME / EDGE
   </p>
 </div>
@@ -501,9 +507,9 @@ h1{font-family:var(--mono);font-size:clamp(1.4rem,4vw,2rem);letter-spacing:.18em
       Connect the serial monitor to watch your device boot and join the network. Press <strong>EN/RST</strong> on the ESP32 to trigger a fresh boot log.
     </p>
     <div style="display:flex;gap:.5rem;align-items:center;margin-bottom:.75rem;flex-wrap:wrap">
-      <button class="btn btn-ghost" id="btn-mon-connect" onclick="monConnect()" style="flex:1;min-width:160px">⬡ Connect Serial Monitor</button>
-      <button class="btn btn-ghost" id="btn-mon-disconnect" onclick="monDisconnect()" disabled style="border-color:#e05;color:#e05;flex:1;min-width:120px">✕ Disconnect</button>
-      <button class="btn btn-ghost" onclick="monClear()" style="min-width:80px">⌫ Clear</button>
+      <button class="btn btn-ghost" id="btn-mon-connect" onclick="monConnect()" style="flex:1;min-width:0;font-size:.72rem">⬡ Connect Monitor</button>
+      <button class="btn btn-ghost" id="btn-mon-disconnect" onclick="monDisconnect()" disabled style="border-color:#e05;color:#e05;flex:1;min-width:0;font-size:.72rem">✕ Disconnect</button>
+      <button class="btn btn-ghost" onclick="monClear()" style="min-width:60px;font-size:.72rem">⌫</button>
       <span id="mon-badge" class="badge badge-idle" style="margin-left:auto">Disconnected</span>
     </div>
     <div class="monitor-box" id="mon-terminal">// Connect to see live device output.
@@ -515,6 +521,44 @@ h1{font-family:var(--mono);font-size:clamp(1.4rem,4vw,2rem);letter-spacing:.18em
   </div>
 </div>
 
+
+<!-- ═══════════════════════════════════════════
+     SCREEN 5 — Serial Monitor
+════════════════════════════════════════════ -->
+<div class="screen" id="screen-5">
+  <header>
+    <div class="logo-row">
+      <div class="tally-indicator"><div class="dot r"></div><div class="dot g"></div></div>
+      <h1>Tally Arbiter</h1>
+      <div class="tally-indicator"><div class="dot g"></div><div class="dot r"></div></div>
+    </div>
+    <div class="tagline">ESP32 Web Flasher &mdash; v1.0</div>
+  </header>
+
+  <div class="card lit">
+    <div class="card-label">// Serial Monitor</div>
+    <p style="font-family:var(--mono);font-size:.68rem;color:var(--muted);line-height:1.7;margin-bottom:1.25rem">
+      Connect your ESP32 via USB and press <strong style="color:var(--text)">EN/RST</strong> to see its boot log, IP address, and live status output.
+    </p>
+
+    <div style="display:flex;gap:.5rem;align-items:center;margin-bottom:.75rem;flex-wrap:wrap">
+      <button class="btn btn-ghost" id="btn-sm-connect" onclick="smConnect()" style="flex:1">⬡ Connect</button>
+      <button class="btn btn-ghost" id="btn-sm-disconnect" onclick="smDisconnect()" disabled style="border-color:#e05;color:#e05;flex:1">✕ Disconnect</button>
+      <button class="btn btn-ghost" onclick="smClear()" style="padding:.75rem 1rem">⌫ Clear</button>
+      <select id="sm-baud" style="font-family:var(--mono);font-size:.7rem;background:var(--bg2);color:var(--text);border:1px solid var(--border2);border-radius:3px;padding:.5rem .6rem">
+        <option value="9600">9600</option>
+        <option value="115200" selected>115200</option>
+        <option value="921600">921600</option>
+      </select>
+      <span id="sm-badge" class="badge badge-idle" style="margin-left:auto">Disconnected</span>
+    </div>
+
+    <div class="monitor-box" id="sm-terminal">// Connect your ESP32 and press EN/RST to see output.
+</div>
+  </div>
+
+  <button class="btn btn-ghost" onclick="smDisconnect();goTo(1)" style="margin-top:.5rem;opacity:.5;font-size:.7rem">← Back</button>
+</div>
 
 <script>
 // ─────────────────────────────────────
@@ -1043,6 +1087,58 @@ function startOver() {
   serialPort = null;
   savedCfg   = null;
   goTo(1);
+}
+
+// ─────────────────────────────────────
+//  SCREEN 5 — Standalone Serial Monitor
+// ─────────────────────────────────────
+var smPort = null, smReader = null, smActive = false;
+
+function smLog(txt) {
+  var t = document.getElementById('sm-terminal');
+  t.textContent += txt;
+  t.scrollTop = t.scrollHeight;
+}
+function smClear() { document.getElementById('sm-terminal').textContent = ''; }
+
+async function smConnect() {
+  try {
+    document.getElementById('btn-sm-connect').disabled = true;
+    var baud = parseInt(document.getElementById('sm-baud').value);
+    smPort = await navigator.serial.requestPort();
+    try { await smPort.close(); } catch(_) {}
+    await delay(300);
+    await smPort.open({ baudRate: baud });
+    smActive = true;
+    document.getElementById('sm-badge').className  = 'badge badge-ok';
+    document.getElementById('sm-badge').textContent = 'Connected';
+    document.getElementById('btn-sm-disconnect').disabled = false;
+    smLog('// Connected at ' + baud + ' baud — press EN/RST on your ESP32.\n\n');
+    smReader = smPort.readable.getReader();
+    var dec = new TextDecoder();
+    while (smActive) {
+      try {
+        var r = await smReader.read();
+        if (r.done || !smActive) break;
+        if (r.value) smLog(dec.decode(r.value));
+      } catch(_) { break; }
+    }
+    try { await smPort.close(); } catch(_) {}
+  } catch(e) {
+    if (e.name !== 'NotFoundError') smLog('// Error: ' + e.message + '\n');
+    document.getElementById('btn-sm-connect').disabled = false;
+  }
+}
+
+async function smDisconnect() {
+  smActive = false;
+  if (smReader) { try { await smReader.cancel(); } catch(_){} try { smReader.releaseLock(); } catch(_){} smReader = null; }
+  if (smPort)   { try { await smPort.close(); }   catch(_){} smPort = null; }
+  document.getElementById('sm-badge').className  = 'badge badge-idle';
+  document.getElementById('sm-badge').textContent = 'Disconnected';
+  document.getElementById('btn-sm-connect').disabled    = false;
+  document.getElementById('btn-sm-disconnect').disabled = true;
+  smLog('\n// Disconnected.\n');
 }
 </script>
 </body>
