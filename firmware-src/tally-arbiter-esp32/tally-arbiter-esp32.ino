@@ -112,7 +112,8 @@ void checkSerialConfig() {
   if (!line.startsWith("CFG:")) return;
 
   String json = line.substring(4);
-  StaticJsonDocument<512> cfg;
+  Serial.println("CFG raw (" + String(json.length()) + " bytes): " + json);
+  StaticJsonDocument<1024> cfg;
   DeserializationError err = deserializeJson(cfg, json);
   if (err) {
     Serial.println("CFG parse error: " + String(err.c_str()));
