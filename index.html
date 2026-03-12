@@ -649,7 +649,8 @@ h1 {
       <div class="row2">
         <div class="field">
           <label>Server IP Address</label>
-          <input type="text" id="ta-host" placeholder="192.168.1.212" autocomplete="off">
+          <input type="text" id="ta-host" placeholder="192.168.1.212" autocomplete="off" list="ta-host-history" onblur="saveHostHistory()">
+          <datalist id="ta-host-history"></datalist>
         </div>
         <div class="field narrow">
           <label>Port</label>
@@ -833,7 +834,39 @@ window.addEventListener('DOMContentLoaded', () => {
     return;
   }
   document.getElementById('listener-name').placeholder = 'esp32-tally-' + Math.floor(Math.random()*9000+1000);
+
+  // Load saved TA host history into datalist
+  loadHostHistory();
 });
+
+function loadHostHistory() {
+  try {
+    var saved = JSON.parse(localStorage.getItem('ta-host-history') || '[]');
+    var dl = document.getElementById('ta-host-history');
+    dl.innerHTML = '';
+    saved.forEach(function(ip) {
+      var opt = document.createElement('option');
+      opt.value = ip;
+      dl.appendChild(opt);
+    });
+    // Pre-fill last used IP
+    if (saved.length > 0) {
+      document.getElementById('ta-host').value = saved[0];
+    }
+  } catch(_) {}
+}
+
+function saveHostHistory() {
+  try {
+    var ip = document.getElementById('ta-host').value.trim();
+    if (!ip) return;
+    var saved = JSON.parse(localStorage.getItem('ta-host-history') || '[]');
+    // Move to front, deduplicate, keep last 10
+    saved = [ip].concat(saved.filter(function(x) { return x !== ip; })).slice(0, 10);
+    localStorage.setItem('ta-host-history', JSON.stringify(saved));
+    loadHostHistory();
+  } catch(_) {}
+}
 
 // ══════════════════════════════════════════════
 //  Helpers
@@ -954,6 +987,7 @@ async function startFlash() {
   document.getElementById('btn-cfg-only').disabled = true;
   document.getElementById('btn-connect').disabled = true;
 
+  saveHostHistory(); // remember this IP for next time
   log('Starting flash sequence...', 'heading');
   log('SSID: ' + cfg.ssid, 'info');
   log('TA Server: ' + cfg.taHost + ':' + cfg.taPort, 'info');
@@ -1287,17 +1321,19 @@ async function eraseOnly() {
   isFlashing = true;
   setAllBtnsDisabled(true);
   log('─── Erase Flash Only ───', 'heading');
-  log('Hold BOOT + tap EN/RST if this hangs...', 'warn');
+  log('Hold BOOT + tap EN/RST to enter flash mode...', 'warn');
   setProgress(10, 'Connecting...');
 
   try {
     await withESPLoader(async function(esp) {
-      setProgress(30, 'Erasing entire flash — this takes ~10 seconds...');
+      setProgress(30, 'Erasing entire flash — takes ~10 seconds...');
       log('Erasing flash...', 'warn');
       await esp.eraseFlash();
       setProgress(100, 'Erase complete!');
-      log('Flash erased. Device is blank — reflash firmware before use.', 'ok');
-      setBadge('port-badge', 'Erased', 'ok');
+      log('✓ Flash erased successfully.', 'ok');
+      log('⚠ DO NOT press EN/RST — the chip is now blank and will crash if reset.', 'warn');
+      log('▶ Now click "Erase + Flash Fresh" to reflash the firmware.', 'ok');
+      setBadge('port-badge', 'Erased — reflash now', 'warn');
     });
   } catch(e) {
     log('Erase error: ' + e.message, 'error');
