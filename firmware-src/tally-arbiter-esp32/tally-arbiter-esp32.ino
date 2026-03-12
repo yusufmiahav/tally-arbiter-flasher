@@ -18,60 +18,8 @@ bool USE_RGB    = false;
 bool RGB_ANODE  = true;
 
 // Config blob written by web flasher to this address at flash time
-// Must be in the "unused" region between partitions (0x3D000 is safe)
 #define CONFIG_FLASH_ADDR 0x3D000
-#define CONFIG_MAGIC      0xCF6700FF  // magic marker to detect valid config
-
-// Reads config JSON from flash address and applies it to preferences
-// Returns true if valid config was found and applied
-bool applyFlashConfig() {
-  uint8_t buf[2048] = {0};
-  esp_err_t err = spi_flash_read(CONFIG_FLASH_ADDR, buf, sizeof(buf));
-  if (err != ESP_OK) return false;
-
-  // Check magic header (first 4 bytes)
-  uint32_t magic;
-  memcpy(&magic, buf, 4);
-  if (magic != CONFIG_MAGIC) return false;
-
-  // JSON starts at byte 4
-  String json = String((char*)(buf + 4));
-  if (json.length() < 5) return false;
-
-  StaticJsonDocument<1024> cfg;
-  if (deserializeJson(cfg, json) != DeserializationError::Ok) return false;
-
-  Serial.println("Found flash config: " + json);
-
-  preferences.begin("tally-arbiter", false);
-  preferences.clear();
-  if (cfg.containsKey("ssid"))     preferences.putString("ssid",      cfg["ssid"].as<String>());
-  if (cfg.containsKey("pass"))     preferences.putString("pass",      cfg["pass"].as<String>());
-  if (cfg.containsKey("tahost"))   preferences.putString("tahost",    cfg["tahost"].as<String>());
-  if (cfg.containsKey("taport"))   preferences.putInt   ("taport",    cfg["taport"].as<int>());
-  if (cfg.containsKey("lname"))    preferences.putString("lname",     cfg["lname"].as<String>());
-  if (cfg.containsKey("devid"))    preferences.putString("deviceid",  cfg["devid"].as<String>());
-  if (cfg.containsKey("cutbus"))   preferences.putBool  ("cutbus",    cfg["cutbus"].as<int>() == 1);
-  if (cfg.containsKey("pinr"))     preferences.putInt   ("pinr",      cfg["pinr"].as<int>());
-  if (cfg.containsKey("ping"))     preferences.putInt   ("ping",      cfg["ping"].as<int>());
-  if (cfg.containsKey("ledtype"))  preferences.putString("ledtype",   cfg["ledtype"].as<String>());
-  if (cfg.containsKey("pinrgbr"))  preferences.putInt   ("pinrgbr",   cfg["pinrgbr"].as<int>());
-  if (cfg.containsKey("pinrgbg"))  preferences.putInt   ("pinrgbg",   cfg["pinrgbg"].as<int>());
-  if (cfg.containsKey("pinrgbb"))  preferences.putInt   ("pinrgbb",   cfg["pinrgbb"].as<int>());
-  if (cfg.containsKey("rgbanode")) preferences.putBool  ("rgbanode",  cfg["rgbanode"].as<int>() == 1);
-  if (cfg.containsKey("static"))   preferences.putBool  ("static",    cfg["static"].as<int>() == 1);
-  if (cfg.containsKey("sip"))      preferences.putString("sip",       cfg["sip"].as<String>());
-  if (cfg.containsKey("sgw"))      preferences.putString("sgw",       cfg["sgw"].as<String>());
-  if (cfg.containsKey("ssn"))      preferences.putString("ssn",       cfg["ssn"].as<String>());
-  preferences.end();
-
-  // Erase the flash config sector so it doesn't re-apply on next boot
-  spi_flash_erase_sector(CONFIG_FLASH_ADDR / SPI_FLASH_SEC_SIZE);
-  Serial.println("Flash config applied and erased. Rebooting...");
-  delay(300);
-  ESP.restart();
-  return true; // never reached
-}
+#define CONFIG_MAGIC      0xCF6700FF
 
 // These defaults are used only if no saved preferences exist
 // The web flasher writes real values via CFG: serial packet on first boot
@@ -527,6 +475,56 @@ void handleSave() {
   webServer.send(200, "text/plain", "Saved! Rebooting...");
   delay(1500);
   ESP.restart();
+}
+
+/* ── Flash config reader ── */
+// Reads config JSON blob written by web flasher to 0x3D000
+// If valid magic found: saves to NVS, erases sector, reboots
+// Only runs on first boot after flashing — erases itself so it never repeats
+bool applyFlashConfig() {
+  uint8_t buf[2048] = {0};
+  esp_err_t err = spi_flash_read(CONFIG_FLASH_ADDR, buf, sizeof(buf));
+  if (err != ESP_OK) return false;
+
+  uint32_t magic;
+  memcpy(&magic, buf, 4);
+  if (magic != CONFIG_MAGIC) return false;
+
+  String json = String((char*)(buf + 4));
+  if (json.length() < 5) return false;
+
+  StaticJsonDocument<1024> cfg;
+  if (deserializeJson(cfg, json) != DeserializationError::Ok) return false;
+
+  Serial.println("Found flash config: " + json);
+
+  preferences.begin("tally-arbiter", false);
+  preferences.clear();
+  if (cfg.containsKey("ssid"))     preferences.putString("ssid",      cfg["ssid"].as<String>());
+  if (cfg.containsKey("pass"))     preferences.putString("pass",      cfg["pass"].as<String>());
+  if (cfg.containsKey("tahost"))   preferences.putString("tahost",    cfg["tahost"].as<String>());
+  if (cfg.containsKey("taport"))   preferences.putInt   ("taport",    cfg["taport"].as<int>());
+  if (cfg.containsKey("lname"))    preferences.putString("lname",     cfg["lname"].as<String>());
+  if (cfg.containsKey("devid"))    preferences.putString("deviceid",  cfg["devid"].as<String>());
+  if (cfg.containsKey("cutbus"))   preferences.putBool  ("cutbus",    cfg["cutbus"].as<int>() == 1);
+  if (cfg.containsKey("pinr"))     preferences.putInt   ("pinr",      cfg["pinr"].as<int>());
+  if (cfg.containsKey("ping"))     preferences.putInt   ("ping",      cfg["ping"].as<int>());
+  if (cfg.containsKey("ledtype"))  preferences.putString("ledtype",   cfg["ledtype"].as<String>());
+  if (cfg.containsKey("pinrgbr"))  preferences.putInt   ("pinrgbr",   cfg["pinrgbr"].as<int>());
+  if (cfg.containsKey("pinrgbg"))  preferences.putInt   ("pinrgbg",   cfg["pinrgbg"].as<int>());
+  if (cfg.containsKey("pinrgbb"))  preferences.putInt   ("pinrgbb",   cfg["pinrgbb"].as<int>());
+  if (cfg.containsKey("rgbanode")) preferences.putBool  ("rgbanode",  cfg["rgbanode"].as<int>() == 1);
+  if (cfg.containsKey("static"))   preferences.putBool  ("static",    cfg["static"].as<int>() == 1);
+  if (cfg.containsKey("sip"))      preferences.putString("sip",       cfg["sip"].as<String>());
+  if (cfg.containsKey("sgw"))      preferences.putString("sgw",       cfg["sgw"].as<String>());
+  if (cfg.containsKey("ssn"))      preferences.putString("ssn",       cfg["ssn"].as<String>());
+  preferences.end();
+
+  spi_flash_erase_sector(CONFIG_FLASH_ADDR / SPI_FLASH_SEC_SIZE);
+  Serial.println("Flash config applied. Rebooting...");
+  delay(300);
+  ESP.restart();
+  return true;
 }
 
 /* ── Setup & Loop ── */
