@@ -799,18 +799,15 @@ h1 {
     <!-- Success screen -->
     <div id="success-screen">
       <div class="success-icon">✓</div>
-      <div class="success-title">Firmware Written</div>
-      <div class="success-sub">One more step — send your settings to the device.</div>
+      <div class="success-title">Flash Complete</div>
+      <div class="success-sub">Firmware and config written in one go. You're done.</div>
       <div style="font-family:var(--mono);font-size:0.65rem;color:var(--muted);line-height:2;margin-bottom:1.25rem;">
         WiFi: <span id="done-ssid" style="color:var(--text)"></span> &nbsp;|&nbsp;
         TA: <span id="done-host" style="color:var(--text)"></span>
       </div>
-
-      <button class="btn btn-primary" id="btn-send-config" onclick="sendConfigAfterFlash()" style="width:100%;margin-bottom:0.5rem;font-size:1rem;padding:0.9rem;letter-spacing:0.1em;">
-        ▶ Send Config to Device
-      </button>
       <div class="hint" style="margin-bottom:1.5rem;text-align:center;">
-        The device is waiting. Click above, select the serial port when prompted, and your settings will be written automatically. Do <strong>not</strong> press EN/RST.
+        The device will read its config on first boot and connect automatically.<br>
+        Watch the LEDs — alternating = connecting, solid green = ready.
       </div>
 
       <!-- Live serial monitor -->
@@ -982,6 +979,36 @@ function setBadge(id, text, type) {
 // ══════════════════════════════════════════════
 //  Validation
 // ══════════════════════════════════════════════
+// ══════════════════════════════════════════════
+//  Build config blob for flash address 0x3D000
+//  Format: 4-byte magic + JSON string + null terminator
+//  Firmware reads this on first boot, applies to NVS, erases it, reboots
+// ══════════════════════════════════════════════
+function buildConfigBlob(cfg) {
+  var MAGIC = 0xCF6700FF;
+  var settings = {
+    ssid: cfg.ssid, pass: cfg.pass,
+    tahost: cfg.taHost, taport: cfg.taPort,
+    lname: cfg.lName, devid: cfg.devId,
+    cutbus: cfg.cutBus ? 1 : 0,
+    pinr: cfg.pinRed, ping: cfg.pinGreen,
+    ledtype: cfg.ledType, pinrgbr: cfg.pinRgbR, pinrgbg: cfg.pinRgbG, pinrgbb: cfg.pinRgbB,
+    rgbanode: cfg.rgbAnode ? 1 : 0,
+    'static': cfg.useStatic ? 1 : 0,
+    sip: cfg.staticIp, sgw: cfg.staticGw, ssn: cfg.staticSn
+  };
+  var json = JSON.stringify(settings);
+  var jsonBytes = new TextEncoder().encode(json + '\0'); // null terminate
+  var buf = new Uint8Array(4 + jsonBytes.length);
+  // Write magic little-endian
+  buf[0] = (MAGIC >>> 0)  & 0xFF;
+  buf[1] = (MAGIC >>> 8)  & 0xFF;
+  buf[2] = (MAGIC >>> 16) & 0xFF;
+  buf[3] = (MAGIC >>> 24) & 0xFF;
+  buf.set(jsonBytes, 4);
+  return buf.buffer;
+}
+
 function getConfig() {
   const ssid      = document.getElementById('wifi-ssid').value.trim();
   const pass      = document.getElementById('wifi-pass').value;
@@ -1115,14 +1142,18 @@ async function startFlash() {
     log('Changing baudrate to 921600', 'info');
     log('Changed', 'ok');
 
+    var cfgBlobBuf = buildConfigBlob(cfg);
+    log('Config blob: ' + cfgBlobBuf.byteLength + ' bytes → 0x3D000', 'info');
+
     const flashFiles = [
-      { name: 'bootloader', data: blBuf, address: 0x1000  },
-      { name: 'partitions', data: ptBuf, address: 0x8000  },
-      { name: 'firmware',   data: fwBuf, address: 0x10000 }
+      { name: 'bootloader', data: blBuf,       address: 0x1000  },
+      { name: 'partitions', data: ptBuf,       address: 0x8000  },
+      { name: 'firmware',   data: fwBuf,       address: 0x10000 },
+      { name: 'config',     data: cfgBlobBuf,  address: 0x3D000 }
     ];
 
     log('Fetching bootloader & partition table...', 'info');
-    log('Writing ' + flashFiles.length + ' file(s) to flash...', 'info');
+    log('Writing ' + flashFiles.length + ' file(s) to flash (incl. config)...', 'info');
 
     const fileArray = flashFiles.map(function(f) {
       return { data: espLoader.ui8ToBstr(new Uint8Array(f.data)), address: f.address };
@@ -1242,8 +1273,7 @@ async function writeNVSSettings(cfg) {
 
     if (confBuf.indexOf('saved') >= 0 || confBuf.indexOf('Rebooting') >= 0) {
       log('✓ Config confirmed! Device rebooting.', 'ok');
-      var sendBtn = document.getElementById('btn-send-config');
-      if (sendBtn) { sendBtn.textContent = '✓ Config Sent — Device Rebooting'; sendBtn.style.borderColor = 'var(--green)'; sendBtn.style.color = 'var(--green)'; }
+
     } else {
       log('No confirmation received. If the device reboots with wrong settings, press EN/RST and click Send Config again.', 'warn');
     }
@@ -1255,9 +1285,7 @@ async function writeNVSSettings(cfg) {
       log('Config error: ' + e.message, 'error');
     }
     if (cfgPort) { try { await cfgPort.close(); } catch(_) {} }
-    // Re-enable the send button so user can retry
-    var sendBtn = document.getElementById('btn-send-config');
-    if (sendBtn) { sendBtn.disabled = false; sendBtn.textContent = '▶ Send Config to Device'; }
+
   }
 }
 
@@ -1354,10 +1382,7 @@ async function sendConfigOnly() {
 // ══════════════════════════════════════════════
 //  Success / Reset
 // ══════════════════════════════════════════════
-var pendingCfg = null; // stores config after flash for sendConfigAfterFlash
-
 function showSuccess(cfg) {
-  pendingCfg = cfg; // save for Send Config button
   document.querySelectorAll('.card').forEach(function(c) { c.style.display = 'none'; });
   document.getElementById('success-screen').classList.add('show');
   document.getElementById('done-ssid').textContent = cfg.ssid;
@@ -1365,15 +1390,7 @@ function showSuccess(cfg) {
   setStep(4);
 }
 
-// Called from the Send Config button on the success screen
-// Fresh user gesture means requestPort() will work
-async function sendConfigAfterFlash() {
-  if (!pendingCfg) return;
-  var btn = document.getElementById('btn-send-config');
-  btn.disabled = true;
-  btn.textContent = 'Sending...';
-  await writeNVSSettings(pendingCfg);
-}
+
 
 function resetFlasher() {
   document.querySelectorAll('.card').forEach(function(c) { c.style.display = 'block'; });
@@ -1388,9 +1405,6 @@ function resetFlasher() {
   setBadge('port-badge', 'Not connected', 'idle');
   document.getElementById('progress-wrap').classList.remove('show');
   document.getElementById('terminal').innerHTML = '<span class="log-dim">// Ready for next flash.</span><br>';
-  pendingCfg = null;
-  var sendBtn = document.getElementById('btn-send-config');
-  if (sendBtn) { sendBtn.disabled = false; sendBtn.textContent = '▶ Send Config to Device'; }
   serialPort = null;
   setStep(1);
 }
@@ -1511,13 +1525,17 @@ async function startCleanFlash() {
     setProgress(30, 'Changing baud rate...');
     await espLoader.changeBaud(921600);
 
+    var cfgBlobBuf = buildConfigBlob(cfg);
+    log('Config blob: ' + cfgBlobBuf.byteLength + ' bytes → 0x3D000', 'info');
+
     var flashFiles = [
-      { name: 'bootloader', data: blBuf, address: 0x1000  },
-      { name: 'partitions', data: ptBuf, address: 0x8000  },
-      { name: 'firmware',   data: fwBuf, address: 0x10000 }
+      { name: 'bootloader', data: blBuf,       address: 0x1000  },
+      { name: 'partitions', data: ptBuf,       address: 0x8000  },
+      { name: 'firmware',   data: fwBuf,       address: 0x10000 },
+      { name: 'config',     data: cfgBlobBuf,  address: 0x3D000 }
     ];
 
-    log('Writing ' + flashFiles.length + ' file(s) to flash...', 'info');
+    log('Writing ' + flashFiles.length + ' file(s) to flash (incl. config)...', 'info');
     await espLoader.writeFlash({
       fileArray: flashFiles.map(function(f) {
         return { data: espLoader.ui8ToBstr(new Uint8Array(f.data)), address: f.address };
