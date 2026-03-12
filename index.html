@@ -8,986 +8,667 @@
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Barlow+Condensed:wght@300;400;600;700&display=swap" rel="stylesheet">
 <script type="module">
 import { ESPLoader, Transport } from "https://unpkg.com/esptool-js@0.5.7/bundle.js";
-window._ESPLoader  = ESPLoader;
-window._Transport  = Transport;
+window._ESPLoader = ESPLoader;
+window._Transport = Transport;
 </script>
 <style>
-/* ── Reset & Root ── */
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --red:#ff2d2d;--green:#00e676;--amber:#ffab00;
+  --bg:#080808;--bg2:#0f0f0f;--panel:#141414;
+  --border:#222;--border2:#2e2e2e;
+  --text:#e8e8e8;--muted:#4a4a4a;
+  --mono:'Share Tech Mono',monospace;
+  --sans:'Barlow Condensed',sans-serif;
+}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:100vh;overflow-x:hidden}
+body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.03) 2px,rgba(0,0,0,.03) 4px);pointer-events:none;z-index:9999}
 
-:root {
-  --red:    #ff2d2d;
-  --red2:   #c01a1a;
-  --green:  #00e676;
-  --amber:  #ffab00;
-  --bg:     #080808;
-  --bg2:    #0f0f0f;
-  --panel:  #141414;
-  --border: #222;
-  --border2:#2e2e2e;
-  --text:   #e8e8e8;
-  --muted:  #4a4a4a;
-  --mono:   'Share Tech Mono', monospace;
-  --sans:   'Barlow Condensed', sans-serif;
-}
+/* brackets */
+.bracket{position:fixed;width:60px;height:60px;border-color:var(--red);border-style:solid;opacity:.2;z-index:100}
+.bracket.tl{top:16px;left:16px;border-width:2px 0 0 2px}
+.bracket.tr{top:16px;right:16px;border-width:2px 2px 0 0}
+.bracket.bl{bottom:16px;left:16px;border-width:0 0 2px 2px}
+.bracket.br{bottom:16px;right:16px;border-width:0 2px 2px 0}
 
-html { scroll-behavior: smooth; }
+/* screens — only one visible at a time */
+.screen{display:none;max-width:700px;margin:0 auto;padding:3rem 1.5rem 5rem;animation:fadeIn .25s ease}
+.screen.active{display:block}
+@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 
-body {
-  background: var(--bg);
-  color: var(--text);
-  font-family: var(--sans);
-  font-weight: 400;
-  min-height: 100vh;
-  overflow-x: hidden;
-}
+/* header */
+header{text-align:center;margin-bottom:2.5rem}
+.logo-row{display:flex;align-items:center;justify-content:center;gap:16px;margin-bottom:.5rem}
+.tally-indicator{display:flex;flex-direction:column;gap:5px}
+.dot{width:10px;height:10px;border-radius:50%}
+.dot.r{background:var(--red);box-shadow:0 0 8px var(--red);animation:blink 2.2s ease-in-out infinite}
+.dot.g{background:var(--green);box-shadow:0 0 8px var(--green);animation:blink 2.2s ease-in-out infinite 1.1s}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
+h1{font-family:var(--mono);font-size:clamp(1.4rem,4vw,2rem);letter-spacing:.18em;color:#fff;text-transform:uppercase}
+.tagline{font-family:var(--mono);font-size:.68rem;letter-spacing:.3em;color:var(--muted);text-transform:uppercase;margin-top:.35rem}
 
-/* ── Scanline overlay ── */
-body::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  background: repeating-linear-gradient(
-    0deg,
-    transparent,
-    transparent 2px,
-    rgba(0,0,0,0.03) 2px,
-    rgba(0,0,0,0.03) 4px
-  );
-  pointer-events: none;
-  z-index: 9999;
-}
+/* step bar */
+.steps{display:flex;align-items:center;justify-content:center;margin-bottom:2rem}
+.step{display:flex;flex-direction:column;align-items:center;gap:5px}
+.step-num{width:32px;height:32px;border-radius:50%;border:1.5px solid var(--border2);background:var(--panel);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:.75rem;color:var(--muted);transition:all .3s}
+.step-label{font-family:var(--mono);font-size:.55rem;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);transition:color .3s;white-space:nowrap}
+.step.active .step-num{border-color:var(--red);color:var(--red);background:rgba(255,45,45,.08);box-shadow:0 0 12px rgba(255,45,45,.2)}
+.step.active .step-label{color:var(--red)}
+.step.done .step-num{border-color:var(--green);color:var(--green);background:rgba(0,230,118,.08)}
+.step.done .step-label{color:var(--green)}
+.step-line{width:48px;height:1px;background:var(--border);margin:0 4px 22px;flex-shrink:0}
 
-/* ── Corner brackets ── */
-.bracket {
-  position: fixed;
-  width: 60px; height: 60px;
-  border-color: var(--red);
-  border-style: solid;
-  opacity: 0.25;
-  z-index: 100;
-}
-.bracket.tl { top: 16px; left: 16px; border-width: 2px 0 0 2px; }
-.bracket.tr { top: 16px; right: 16px; border-width: 2px 2px 0 0; }
-.bracket.bl { bottom: 16px; left: 16px; border-width: 0 0 2px 2px; }
-.bracket.br { bottom: 16px; right: 16px; border-width: 0 2px 2px 0; }
+/* cards */
+.card{background:var(--panel);border:1px solid var(--border);border-radius:4px;padding:1.75rem;margin-bottom:1rem;position:relative;overflow:hidden}
+.card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--red),transparent);opacity:0;transition:opacity .3s}
+.card.lit::before{opacity:1}
+.card-label{font-family:var(--mono);font-size:.6rem;letter-spacing:.28em;text-transform:uppercase;color:var(--red);margin-bottom:1.25rem;display:flex;align-items:center;gap:8px}
+.card-label::after{content:'';flex:1;height:1px;background:var(--border)}
 
-/* ── Layout ── */
-.page {
-  max-width: 680px;
-  margin: 0 auto;
-  padding: 3rem 1.5rem 4rem;
-}
+/* fields */
+.field{margin-bottom:1.1rem}
+.field:last-child{margin-bottom:0}
+.field label{display:block;font-family:var(--mono);font-size:.62rem;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);margin-bottom:.4rem}
+.field input{width:100%;background:var(--bg);border:1px solid var(--border2);border-radius:3px;color:var(--text);font-family:var(--mono);font-size:.92rem;padding:.6rem .8rem;outline:none;transition:border-color .2s,box-shadow .2s}
+.field input:focus{border-color:var(--red);box-shadow:0 0 0 3px rgba(255,45,45,.08)}
+.row2{display:flex;gap:.75rem}
+.row2 .field{flex:1}
+.row2 .field.narrow{flex:0 0 110px}
+.hint{font-family:var(--mono);font-size:.6rem;color:var(--muted);margin-top:.35rem;line-height:1.5}
+.divider{height:1px;background:var(--border);margin:1.25rem 0}
 
-/* ── Header ── */
-header {
-  text-align: center;
-  margin-bottom: 3rem;
-}
+/* toggle */
+.toggle-row{display:flex;align-items:center;justify-content:space-between;padding:.6rem 0}
+.toggle-label{font-family:var(--mono);font-size:.65rem;letter-spacing:.12em;text-transform:uppercase;color:var(--text)}
+.toggle{position:relative;width:40px;height:22px}
+.toggle input{display:none}
+.toggle-track{position:absolute;inset:0;background:var(--border2);border-radius:11px;cursor:pointer;transition:background .2s}
+.toggle-track::after{content:'';position:absolute;top:3px;left:3px;width:16px;height:16px;background:var(--muted);border-radius:50%;transition:transform .2s,background .2s}
+.toggle input:checked+.toggle-track{background:rgba(255,45,45,.3)}
+.toggle input:checked+.toggle-track::after{transform:translateX(18px);background:var(--red)}
 
-.logo-row {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-  margin-bottom: 0.6rem;
-}
+/* buttons */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;font-family:var(--mono);font-size:.82rem;letter-spacing:.14em;text-transform:uppercase;padding:.75rem 1.5rem;border:none;border-radius:3px;cursor:pointer;transition:all .18s;white-space:nowrap}
+.btn-primary{background:var(--red);color:#fff}
+.btn-primary:hover:not(:disabled){background:#e01c1c;transform:translateY(-1px);box-shadow:0 4px 16px rgba(255,45,45,.3)}
+.btn-green{background:var(--green);color:#000}
+.btn-green:hover:not(:disabled){background:#00c060;transform:translateY(-1px);box-shadow:0 4px 16px rgba(0,230,118,.25)}
+.btn-ghost{background:transparent;color:var(--text);border:1px solid var(--border2)}
+.btn-ghost:hover:not(:disabled){border-color:var(--muted)}
+.btn:disabled{opacity:.35;cursor:not-allowed}
+.btn-row{display:flex;gap:.75rem;margin-top:1.25rem;flex-wrap:wrap}
+.btn-full{width:100%}
 
-.tally-indicator {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
+/* progress */
+.progress-wrap{margin-top:1.25rem;display:none}
+.progress-wrap.show{display:block}
+.progress-header{display:flex;justify-content:space-between;margin-bottom:.5rem}
+.progress-label{font-family:var(--mono);font-size:.62rem;letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
+.progress-pct{font-family:var(--mono);font-size:.75rem;color:var(--green)}
+.progress-track{height:4px;background:var(--border);border-radius:2px;overflow:hidden}
+.progress-fill{height:100%;background:linear-gradient(90deg,var(--red),var(--amber));border-radius:2px;width:0%;transition:width .3s}
+.progress-fill.done{background:var(--green)}
 
-.dot {
-  width: 10px; height: 10px;
-  border-radius: 50%;
-}
-.dot.r { background: var(--red);   box-shadow: 0 0 8px var(--red);   animation: blink 2.2s ease-in-out infinite; }
-.dot.g { background: var(--green); box-shadow: 0 0 8px var(--green); animation: blink 2.2s ease-in-out infinite 1.1s; }
+/* terminal / log */
+.terminal{background:#030303;border:1px solid var(--border);border-radius:3px;padding:.8rem 1rem;overflow-y:auto;font-family:var(--mono);font-size:.68rem;line-height:1.7;color:#5a5a5a;margin-top:1rem;scroll-behavior:smooth}
+.terminal .log-info{color:#5a5a5a}
+.terminal .log-ok{color:var(--green)}
+.terminal .log-warn{color:var(--amber)}
+.terminal .log-error{color:var(--red)}
+.terminal .log-dim{color:#333}
+.terminal .log-heading{color:#777;letter-spacing:.1em}
 
-@keyframes blink {
-  0%,100% { opacity: 1; }
-  50%      { opacity: 0.2; }
-}
+/* badge */
+.badge{display:inline-flex;align-items:center;gap:5px;padding:2px 10px;border-radius:2px;font-family:var(--mono);font-size:.65rem;letter-spacing:.1em}
+.badge::before{content:'';width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.badge-ok{background:rgba(0,230,118,.1);color:var(--green)}
+.badge-ok::before{background:var(--green);box-shadow:0 0 6px var(--green)}
+.badge-error{background:rgba(255,45,45,.1);color:var(--red)}
+.badge-error::before{background:var(--red)}
+.badge-warn{background:rgba(255,171,0,.1);color:var(--amber)}
+.badge-warn::before{background:var(--amber)}
+.badge-idle{background:rgba(255,255,255,.04);color:var(--muted)}
+.badge-idle::before{background:var(--muted)}
 
-h1 {
-  font-family: var(--mono);
-  font-size: clamp(1.4rem, 4vw, 2rem);
-  letter-spacing: 0.18em;
-  color: #fff;
-  text-transform: uppercase;
-}
+/* statusbar */
+.statusbar{display:flex;align-items:center;justify-content:space-between;padding:.6rem .8rem;background:var(--bg2);border:1px solid var(--border);border-radius:3px;margin-bottom:1rem}
+.statusbar-left{font-family:var(--mono);font-size:.62rem;letter-spacing:.15em;text-transform:uppercase;color:var(--muted)}
 
-.tagline {
-  font-family: var(--mono);
-  font-size: 0.68rem;
-  letter-spacing: 0.3em;
-  color: var(--muted);
-  text-transform: uppercase;
-  margin-top: 0.4rem;
-}
+/* alert */
+.alert{padding:.8rem 1rem;border-radius:3px;font-family:var(--mono);font-size:.7rem;line-height:1.6;letter-spacing:.05em;margin-bottom:1rem;display:flex;gap:10px;align-items:flex-start}
+.alert-icon{flex-shrink:0;font-size:.9rem}
+.alert-warn{background:rgba(255,171,0,.08);border:1px solid rgba(255,171,0,.2);color:var(--amber)}
+.alert-info{background:rgba(255,45,45,.05);border:1px solid rgba(255,45,45,.12);color:#888}
+.alert-green{background:rgba(0,230,118,.06);border:1px solid rgba(0,230,118,.2);color:var(--green)}
 
-/* ── Step tracker ── */
-.steps {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0;
-  margin-bottom: 2.5rem;
-}
+/* done screen big tick */
+.big-tick{font-size:4.5rem;line-height:1;margin-bottom:1rem;animation:pop .4s cubic-bezier(.175,.885,.32,1.275)}
+@keyframes pop{from{transform:scale(0);opacity:0}to{transform:scale(1);opacity:1}}
+.done-title{font-family:var(--mono);font-size:1.3rem;letter-spacing:.2em;color:var(--green);text-transform:uppercase;margin-bottom:.4rem}
+.done-sub{font-family:var(--mono);font-size:.7rem;color:var(--muted);letter-spacing:.1em;margin-bottom:2rem}
 
-.step {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  position: relative;
-}
+/* serial monitor (screen 4 only) */
+.monitor-box{background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:.75rem;font-family:var(--mono);font-size:.65rem;color:#aaa;height:280px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;line-height:1.6}
 
-.step-num {
-  width: 32px; height: 32px;
-  border-radius: 50%;
-  border: 1.5px solid var(--border2);
-  background: var(--panel);
-  display: flex; align-items: center; justify-content: center;
-  font-family: var(--mono);
-  font-size: 0.75rem;
-  color: var(--muted);
-  transition: all 0.3s;
-}
+/* browser warn */
+#browser-warn{display:none;max-width:680px;margin:5rem auto;padding:0 1.5rem}
 
-.step-label {
-  font-family: var(--mono);
-  font-size: 0.55rem;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: var(--muted);
-  transition: color 0.3s;
-  white-space: nowrap;
-}
-
-.step.active .step-num  { border-color: var(--red); color: var(--red); background: rgba(255,45,45,0.08); box-shadow: 0 0 12px rgba(255,45,45,0.2); }
-.step.active .step-label { color: var(--red); }
-.step.done  .step-num  { border-color: var(--green); color: var(--green); background: rgba(0,230,118,0.08); }
-.step.done  .step-label { color: var(--green); }
-
-.step-line {
-  width: 48px;
-  height: 1px;
-  background: var(--border);
-  margin: 0 4px;
-  margin-bottom: 22px;
-  flex-shrink: 0;
-}
-
-/* ── Cards ── */
-.card {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 1.75rem;
-  margin-bottom: 1rem;
-  position: relative;
-  overflow: hidden;
-}
-
-.card::before {
-  content: '';
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 2px;
-  background: linear-gradient(90deg, var(--red), transparent);
-  opacity: 0;
-  transition: opacity 0.3s;
-}
-.card.active-card::before { opacity: 1; }
-
-.card-label {
-  font-family: var(--mono);
-  font-size: 0.6rem;
-  letter-spacing: 0.28em;
-  text-transform: uppercase;
-  color: var(--red);
-  margin-bottom: 1.25rem;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.card-label::after {
-  content: '';
-  flex: 1;
-  height: 1px;
-  background: var(--border);
-}
-
-/* ── Form fields ── */
-.field { margin-bottom: 1.1rem; }
-.field:last-child { margin-bottom: 0; }
-
-.field label {
-  display: block;
-  font-family: var(--mono);
-  font-size: 0.62rem;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--muted);
-  margin-bottom: 0.4rem;
-}
-
-.field input {
-  width: 100%;
-  background: var(--bg);
-  border: 1px solid var(--border2);
-  border-radius: 3px;
-  color: var(--text);
-  font-family: var(--mono);
-  font-size: 0.92rem;
-  padding: 0.6rem 0.8rem;
-  outline: none;
-  transition: border-color 0.2s, box-shadow 0.2s;
-}
-
-.field input:focus {
-  border-color: var(--red);
-  box-shadow: 0 0 0 3px rgba(255,45,45,0.08);
-}
-
-.row2 { display: flex; gap: 0.75rem; }
-.row2 .field { flex: 1; }
-.row2 .field.narrow { flex: 0 0 110px; }
-
-/* ── Hint text ── */
-.hint {
-  font-family: var(--mono);
-  font-size: 0.6rem;
-  color: var(--muted);
-  margin-top: 0.35rem;
-  line-height: 1.5;
-}
-
-/* ── Toggle ── */
-.toggle-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.6rem 0;
-}
-
-.toggle-label {
-  font-family: var(--mono);
-  font-size: 0.65rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--text);
-}
-
-.toggle {
-  position: relative;
-  width: 40px; height: 22px;
-}
-.toggle input { display: none; }
-.toggle-track {
-  position: absolute; inset: 0;
-  background: var(--border2);
-  border-radius: 11px;
-  cursor: pointer;
-  transition: background 0.2s;
-}
-.toggle-track::after {
-  content: '';
-  position: absolute;
-  top: 3px; left: 3px;
-  width: 16px; height: 16px;
-  background: var(--muted);
-  border-radius: 50%;
-  transition: transform 0.2s, background 0.2s;
-}
-.toggle input:checked + .toggle-track { background: rgba(255,45,45,0.3); }
-.toggle input:checked + .toggle-track::after { transform: translateX(18px); background: var(--red); }
-
-/* ── Buttons ── */
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  font-family: var(--mono);
-  font-size: 0.82rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  padding: 0.75rem 1.5rem;
-  border: none;
-  border-radius: 3px;
-  cursor: pointer;
-  transition: all 0.18s;
-  white-space: nowrap;
-}
-
-.btn-primary {
-  background: var(--red);
-  color: #fff;
-}
-.btn-primary:hover:not(:disabled) { background: #e01c1c; transform: translateY(-1px); box-shadow: 0 4px 16px rgba(255,45,45,0.3); }
-.btn-primary:active:not(:disabled) { transform: translateY(0); }
-
-.btn-ghost {
-  background: transparent;
-  color: var(--text);
-  border: 1px solid var(--border2);
-}
-.btn-ghost:hover:not(:disabled) { border-color: var(--muted); }
-
-.btn:disabled { opacity: 0.35; cursor: not-allowed; }
-
-.btn-row {
-  display: flex;
-  gap: 0.75rem;
-  margin-top: 1.25rem;
-  flex-wrap: wrap;
-}
-
-.btn-full { width: 100%; }
-
-/* ── Progress bar ── */
-.progress-wrap {
-  margin-top: 1.25rem;
-  display: none;
-}
-.progress-wrap.show { display: block; }
-
-.progress-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0.5rem;
-}
-.progress-label {
-  font-family: var(--mono);
-  font-size: 0.62rem;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-.progress-pct {
-  font-family: var(--mono);
-  font-size: 0.75rem;
-  color: var(--green);
-}
-
-.progress-track {
-  height: 4px;
-  background: var(--border);
-  border-radius: 2px;
-  overflow: hidden;
-}
-.progress-fill {
-  height: 100%;
-  background: linear-gradient(90deg, var(--red), var(--amber));
-  border-radius: 2px;
-  width: 0%;
-  transition: width 0.3s;
-}
-.progress-fill.done { background: var(--green); }
-
-/* ── Log terminal ── */
-.terminal {
-  background: #030303;
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  padding: 0.8rem 1rem;
-  height: 180px;
-  overflow-y: auto;
-  font-family: var(--mono);
-  font-size: 0.68rem;
-  line-height: 1.7;
-  color: #5a5a5a;
-  margin-top: 1rem;
-  scroll-behavior: smooth;
-}
-
-.terminal .log-info    { color: #5a5a5a; }
-.terminal .log-ok      { color: var(--green); }
-.terminal .log-warn    { color: var(--amber); }
-.terminal .log-error   { color: var(--red); }
-.terminal .log-dim     { color: #333; }
-.terminal .log-heading { color: #888; }
-
-/* ── Status badge ── */
-.badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 2px 10px;
-  border-radius: 2px;
-  font-family: var(--mono);
-  font-size: 0.65rem;
-  letter-spacing: 0.1em;
-}
-.badge::before {
-  content: '';
-  width: 6px; height: 6px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-.badge-ok      { background: rgba(0,230,118,0.1);  color: var(--green); }
-.badge-ok::before     { background: var(--green); box-shadow: 0 0 6px var(--green); }
-.badge-error   { background: rgba(255,45,45,0.1);  color: var(--red); }
-.badge-error::before  { background: var(--red); }
-.badge-warn    { background: rgba(255,171,0,0.1);  color: var(--amber); }
-.badge-warn::before   { background: var(--amber); }
-.badge-idle    { background: rgba(255,255,255,0.04); color: var(--muted); }
-.badge-idle::before   { background: var(--muted); }
-
-/* ── Connection status bar ── */
-.statusbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.6rem 0.8rem;
-  background: var(--bg2);
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  margin-bottom: 1rem;
-}
-.statusbar-left {
-  font-family: var(--mono);
-  font-size: 0.62rem;
-  letter-spacing: 0.15em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
-/* ── Alert ── */
-.alert {
-  padding: 0.8rem 1rem;
-  border-radius: 3px;
-  font-family: var(--mono);
-  font-size: 0.7rem;
-  line-height: 1.6;
-  letter-spacing: 0.05em;
-  margin-bottom: 1rem;
-  display: flex;
-  gap: 10px;
-  align-items: flex-start;
-}
-.alert-icon { flex-shrink: 0; font-size: 0.9rem; }
-.alert-warn  { background: rgba(255,171,0,0.08);  border: 1px solid rgba(255,171,0,0.2);  color: var(--amber); }
-.alert-info  { background: rgba(255,45,45,0.06);  border: 1px solid rgba(255,45,45,0.15); color: #888; }
-.alert a { color: var(--red); text-decoration: none; }
-.alert a:hover { text-decoration: underline; }
-
-/* ── Success screen ── */
-#success-screen {
-  display: none;
-  text-align: center;
-  padding: 2rem 1rem;
-}
-#success-screen.show { display: block; }
-
-.success-icon {
-  font-size: 3rem;
-  margin-bottom: 1rem;
-  animation: pop 0.4s cubic-bezier(0.175,0.885,0.32,1.275);
-}
-@keyframes pop {
-  from { transform: scale(0); opacity: 0; }
-  to   { transform: scale(1); opacity: 1; }
-}
-
-.success-title {
-  font-family: var(--mono);
-  font-size: 1.1rem;
-  letter-spacing: 0.2em;
-  color: var(--green);
-  text-transform: uppercase;
-  margin-bottom: 0.5rem;
-}
-
-.success-sub {
-  font-family: var(--mono);
-  font-size: 0.7rem;
-  color: var(--muted);
-  letter-spacing: 0.1em;
-  margin-bottom: 1.5rem;
-}
-
-/* ── Browser warning ── */
-#browser-warn {
-  display: none;
-  text-align: center;
-  padding: 2rem;
-}
-
-/* ── Divider ── */
-.divider {
-  height: 1px;
-  background: var(--border);
-  margin: 1.25rem 0;
-}
-
-/* ── Responsive ── */
-@media (max-width: 480px) {
-  .row2 { flex-direction: column; }
-  .row2 .field.narrow { flex: 1; }
-  .step-line { width: 24px; }
-}
+@media(max-width:480px){.row2{flex-direction:column}.row2 .field.narrow{flex:1}.step-line{width:24px}}
 </style>
 </head>
 <body>
 
-<div class="bracket tl"></div>
-<div class="bracket tr"></div>
-<div class="bracket bl"></div>
-<div class="bracket br"></div>
+<div class="bracket tl"></div><div class="bracket tr"></div>
+<div class="bracket bl"></div><div class="bracket br"></div>
 
-<div class="page">
+<!-- ═══ BROWSER WARN ═══ -->
+<div id="browser-warn">
+  <div class="alert alert-warn">
+    <span class="alert-icon">⚠</span>
+    <div><strong>Browser not supported.</strong><br>
+    This tool requires <strong>Google Chrome</strong> or <strong>Microsoft Edge</strong> (v89+). Firefox and Safari do not support Web Serial.</div>
+  </div>
+</div>
 
-  <!-- Header -->
+<!-- ═══════════════════════════════════════════
+     SCREEN 1 — Configure Settings
+════════════════════════════════════════════ -->
+<div class="screen active" id="screen-1">
   <header>
     <div class="logo-row">
-      <div class="tally-indicator">
-        <div class="dot r"></div>
-        <div class="dot g"></div>
-      </div>
+      <div class="tally-indicator"><div class="dot r"></div><div class="dot g"></div></div>
       <h1>Tally Arbiter</h1>
-      <div class="tally-indicator">
-        <div class="dot g"></div>
-        <div class="dot r"></div>
-      </div>
+      <div class="tally-indicator"><div class="dot g"></div><div class="dot r"></div></div>
     </div>
     <div class="tagline">ESP32 Web Flasher &mdash; v1.0</div>
   </header>
 
-  <!-- Browser compatibility warning -->
-  <div id="browser-warn">
-    <div class="alert alert-warn">
-      <span class="alert-icon">⚠</span>
-      <div>
-        <strong>Browser not supported.</strong><br>
-        This flasher requires <strong>Google Chrome</strong> or <strong>Microsoft Edge</strong> (version 89+) for Web Serial API support.<br>
-        Firefox and Safari are not supported.
-      </div>
-    </div>
+  <div class="steps">
+    <div class="step active"><div class="step-num">1</div><div class="step-label">Configure</div></div>
+    <div class="step-line"></div>
+    <div class="step"><div class="step-num">2</div><div class="step-label">Flash</div></div>
+    <div class="step-line"></div>
+    <div class="step"><div class="step-num">3</div><div class="step-label">Send Config</div></div>
+    <div class="step-line"></div>
+    <div class="step"><div class="step-num">4</div><div class="step-label">Done</div></div>
   </div>
 
-  <!-- Main content -->
-  <div id="main-content">
-
-    <!-- Step tracker -->
-    <div class="steps">
-      <div class="step active" id="step-1">
-        <div class="step-num">1</div>
-        <div class="step-label">Configure</div>
-      </div>
-      <div class="step-line"></div>
-      <div class="step" id="step-2">
-        <div class="step-num">2</div>
-        <div class="step-label">Connect</div>
-      </div>
-      <div class="step-line"></div>
-      <div class="step" id="step-3">
-        <div class="step-num">3</div>
-        <div class="step-label">Flash</div>
-      </div>
-      <div class="step-line"></div>
-      <div class="step" id="step-4">
-        <div class="step-num">4</div>
-        <div class="step-label">Done</div>
-      </div>
+  <!-- WiFi -->
+  <div class="card lit">
+    <div class="card-label">// 01 &mdash; WiFi Network</div>
+    <div class="field">
+      <label>WiFi SSID</label>
+      <input type="text" id="wifi-ssid" placeholder="YourNetworkName" autocomplete="off" spellcheck="false">
+      <div class="hint">2.4 GHz only — ESP32 does not support 5 GHz.</div>
     </div>
-
-    <!-- Info alert -->
-    <div class="alert alert-info">
-      <span class="alert-icon">ℹ</span>
-      <div>
-        Fill in your WiFi and Tally Arbiter settings, then connect your ESP32 via USB. Use <strong>Flash Firmware</strong> to write the firmware, then <strong>Send Config to Device</strong> to write your settings — no Arduino IDE needed.
-      </div>
+    <div class="field">
+      <label>WiFi Password</label>
+      <input type="password" id="wifi-pass" placeholder="••••••••••••" autocomplete="off">
     </div>
-
-    <!-- Step 1: WiFi Config -->
-    <div class="card active-card" id="card-wifi">
-      <div class="card-label">// 01 &mdash; WiFi Network</div>
-      <div class="field">
-        <label>WiFi SSID</label>
-        <input type="text" id="wifi-ssid" placeholder="YourNetworkName" autocomplete="off" spellcheck="false">
-        <div class="hint">Must be 2.4 GHz — ESP32 does not support 5 GHz networks.</div>
-      </div>
-      <div class="field">
-        <label>WiFi Password</label>
-        <input type="password" id="wifi-pass" placeholder="••••••••••••" autocomplete="off">
-      </div>
-      <div class="divider"></div>
-      <div class="toggle-row">
-        <span class="toggle-label">Use Static IP</span>
-        <label class="toggle">
-          <input type="checkbox" id="use-static" onchange="toggleStatic()">
-          <span class="toggle-track"></span>
-        </label>
-      </div>
-      <div id="static-fields" style="display:none; margin-top:0.75rem;">
-        <div class="row2">
-          <div class="field">
-            <label>Device IP</label>
-            <input type="text" id="static-ip" placeholder="192.168.1.100">
-          </div>
-          <div class="field">
-            <label>Gateway</label>
-            <input type="text" id="static-gw" placeholder="192.168.1.1">
-          </div>
-        </div>
-        <div class="field">
-          <label>Subnet Mask</label>
-          <input type="text" id="static-sn" placeholder="255.255.255.0">
-        </div>
-      </div>
+    <div class="divider"></div>
+    <div class="toggle-row">
+      <span class="toggle-label">Use Static IP</span>
+      <label class="toggle"><input type="checkbox" id="use-static" onchange="toggleStatic()"><span class="toggle-track"></span></label>
     </div>
-
-    <!-- Step 2: Tally Arbiter Config -->
-    <div class="card" id="card-ta">
-      <div class="card-label">// 02 &mdash; Tally Arbiter Server</div>
+    <div id="static-fields" style="display:none;margin-top:.75rem">
       <div class="row2">
-        <div class="field">
-          <label>Server IP Address</label>
-          <input type="text" id="ta-host" placeholder="192.168.1.212" autocomplete="off" list="ta-host-history" onblur="saveHostHistory()">
-          <datalist id="ta-host-history"></datalist>
-        </div>
-        <div class="field narrow">
-          <label>Port</label>
-          <input type="number" id="ta-port" placeholder="4455" value="4455">
-        </div>
+        <div class="field"><label>Device IP</label><input type="text" id="static-ip" placeholder="192.168.1.100"></div>
+        <div class="field"><label>Gateway</label><input type="text" id="static-gw" placeholder="192.168.1.1"></div>
       </div>
-      <div class="field">
-        <label>Listener Name</label>
-        <input type="text" id="listener-name" placeholder="esp32-tally-1" autocomplete="off">
-        <div class="hint">Shown in the TA "Connected Listeners" panel. Leave blank to auto-generate from chip ID.</div>
-      </div>
-      <div class="field">
-        <label>Device ID (optional)</label>
-        <input type="text" id="device-id" placeholder="unassigned" autocomplete="off">
-        <div class="hint">Leave as "unassigned" if you want TA to assign one automatically.</div>
-      </div>
-      <div class="divider"></div>
-      <div class="toggle-row">
-        <span class="toggle-label">CUT_BUS mode (Program+Preview = Red only)</span>
-        <label class="toggle">
-          <input type="checkbox" id="cut-bus" checked>
-          <span class="toggle-track"></span>
-        </label>
-      </div>
-    </div>
-
-    <!-- Step 3: Hardware Config -->
-    <div class="card" id="card-hw">
-      <div class="card-label">// 03 &mdash; Hardware Pins</div>
-
-      <div class="toggle-row" style="margin-bottom:1rem;">
-        <span class="toggle-label">LED Type</span>
-        <div style="display:flex;gap:0.5rem;">
-          <button class="btn btn-ghost" id="btn-led-2pin" onclick="setLedType('2pin')" style="padding:0.3rem 0.8rem;font-size:0.7rem;border-color:var(--red);color:var(--red);">
-            ● 2-Pin (Red + Green)
-          </button>
-          <button class="btn btn-ghost" id="btn-led-rgb" onclick="setLedType('rgb')" style="padding:0.3rem 0.8rem;font-size:0.7rem;">
-            ◉ 4-Pin RGB
-          </button>
-        </div>
-      </div>
-
-      <!-- 2-pin fields -->
-      <div id="pins-2pin">
-        <div class="row2">
-          <div class="field">
-            <label>Red LED Pin (Program)</label>
-            <input type="number" id="pin-red" value="23">
-          </div>
-          <div class="field">
-            <label>Green LED Pin (Preview)</label>
-            <input type="number" id="pin-green" value="22">
-          </div>
-        </div>
-        <div class="hint" style="margin-top:0.25rem;">Two separate LEDs — one red, one green, each with a 220Ω resistor.</div>
-      </div>
-
-      <!-- RGB 4-pin fields -->
-      <div id="pins-rgb" style="display:none;">
-        <div class="row2">
-          <div class="field">
-            <label>Red Pin</label>
-            <input type="number" id="pin-rgb-r" value="23">
-          </div>
-          <div class="field">
-            <label>Green Pin</label>
-            <input type="number" id="pin-rgb-g" value="22">
-          </div>
-          <div class="field">
-            <label>Blue Pin</label>
-            <input type="number" id="pin-rgb-b" value="21">
-          </div>
-        </div>
-        <div class="toggle-row" style="margin-top:0.75rem;">
-          <span class="toggle-label">Common Anode (most 4-pin RGB LEDs)</span>
-          <label class="toggle">
-            <input type="checkbox" id="rgb-common-anode" checked>
-            <span class="toggle-track"></span>
-          </label>
-        </div>
-        <div class="hint" style="margin-top:0.25rem;">Common Anode = 4th pin to 3.3V, logic inverted. Common Cathode = 4th pin to GND, normal logic. Each colour pin needs a 220Ω resistor.</div>
-      </div>
-    </div>
-
-    <!-- Step 4: Connect & Flash -->
-    <div class="card" id="card-flash">
-      <div class="card-label">// 04 &mdash; Flash Device</div>
-
-      <div class="statusbar">
-        <span class="statusbar-left">Serial Port</span>
-        <span id="port-badge" class="badge badge-idle">Not connected</span>
-      </div>
-
-      <div class="alert alert-warn" id="hold-boot-warn" style="display:none;">
-        <span class="alert-icon">⚡</span>
-        <div>
-          <strong>Hold BOOT button</strong> on your ESP32 while clicking Connect, then release once the port appears. Some boards enter flash mode automatically.
-          <strong>Not needed for Send Config to Device.</strong>
-        </div>
-      </div>
-
-      <div class="btn-row">
-        <button class="btn btn-ghost" id="btn-connect" onclick="connectSerial()">
-          ⬡ Connect Device
-        </button>
-        <button class="btn btn-primary btn-full" id="btn-flash" onclick="startFlash()" disabled>
-          ▶ Flash Firmware
-        </button>
-      </div>
-      <div class="btn-row" style="margin-top:0.5rem;">
-        <button class="btn btn-ghost btn-full" id="btn-cfg-only" onclick="sendConfigOnly()" disabled style="border-color:var(--green);color:var(--green);">
-          ⟳ Send Config to Device
-        </button>
-      </div>
-      <div class="btn-row" style="margin-top:0.5rem;gap:0.5rem;">
-        <button class="btn btn-ghost" id="btn-erase" onclick="eraseOnly()" disabled style="flex:1;border-color:#ff9800;color:#ff9800;">
-          ⚠ Erase Flash Only
-        </button>
-        <button class="btn btn-ghost" id="btn-clean-flash" onclick="startCleanFlash()" disabled style="flex:1;border-color:#e040fb;color:#e040fb;">
-          ☠ Erase + Flash Fresh
-        </button>
-      </div>
-      <div class="hint" style="margin-top:0.5rem;">
-        <strong>Erase Flash Only</strong> — wipes everything including corrupted NVS. Use when device is stuck in a reboot loop.<br>
-        <strong>Erase + Flash Fresh</strong> — full chip erase then reflash. Use this to fix reboot loops or corrupted flash.
-      </div>
-
-      <!-- Progress -->
-      <div class="progress-wrap" id="progress-wrap">
-        <div class="progress-header">
-          <span class="progress-label" id="progress-label">Erasing...</span>
-          <span class="progress-pct" id="progress-pct">0%</span>
-        </div>
-        <div class="progress-track">
-          <div class="progress-fill" id="progress-fill"></div>
-        </div>
-      </div>
-
-      <!-- Terminal -->
-      <div class="terminal" id="terminal">
-        <span class="log-dim">// Tally Arbiter ESP32 Flasher ready.</span><br>
-        <span class="log-dim">// Fill in settings above, connect your device, then flash.</span><br>
-      </div>
-    </div>
-
-    <!-- Success screen -->
-    <div id="success-screen">
-      <div class="success-icon">✓</div>
-      <div class="success-title">Firmware Written</div>
-      <div class="success-sub">Step 2 of 2 — send your settings to the device.</div>
-      <div style="font-family:var(--mono);font-size:0.65rem;color:var(--muted);line-height:2;margin-bottom:1.25rem;">
-        WiFi: <span id="done-ssid" style="color:var(--text)"></span> &nbsp;|&nbsp;
-        TA: <span id="done-host" style="color:var(--text)"></span>
-      </div>
-
-      <div class="alert alert-warn" style="margin-bottom:1rem;text-align:left;">
-        <span class="alert-icon">①</span>
-        <div>The device is now waiting for config. <strong>Scroll down</strong> to the flash panel and click <strong style="color:var(--green);">⟳ Send Config to Device</strong> to send your WiFi and TA settings. Do not press EN/RST.</div>
-      </div>
-
-      <!-- Live serial monitor -->
-      <div style="text-align:left;margin-bottom:1.5rem;">
-        <div style="font-family:var(--mono);font-size:0.6rem;color:var(--red);letter-spacing:0.2em;margin-bottom:0.5rem;">// LIVE DEVICE OUTPUT</div>
-        <div style="display:flex;gap:0.5rem;margin-bottom:0.5rem;align-items:center;">
-          <button class="btn btn-ghost" id="btn-success-monitor" onclick="successMonitorConnect()" style="flex:1;font-size:0.7rem;padding:0.4rem;">⬡ Connect to see boot log</button>
-          <button class="btn btn-ghost" id="btn-success-monitor-stop" onclick="successMonitorDisconnect()" disabled style="border-color:#e05;color:#e05;font-size:0.7rem;padding:0.4rem;">✕</button>
-          <span id="success-monitor-badge" class="badge badge-idle">Disconnected</span>
-        </div>
-        <div id="success-monitor-terminal" style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.6rem;font-family:var(--mono);font-size:0.62rem;color:#aaa;height:180px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;line-height:1.6;"><span style="color:var(--muted)">// Connect to see device boot messages.</span>
-</div>
-      </div>
-
-      <button class="btn btn-ghost" onclick="resetFlasher()">← Start Over</button>
-    </div>
-
-  </div><!-- /main-content -->
-
-  <!-- Serial Monitor -->
-  <div id="monitor-section" style="max-width:680px;margin:2rem auto 0;padding:0 1rem;">
-    <div class="card" style="display:block;">
-      <div class="card-label">// Serial Monitor</div>
-      <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.75rem;flex-wrap:wrap;">
-        <button class="btn btn-ghost" id="btn-monitor-connect" onclick="monitorConnect()" style="flex:1;min-width:140px;">
-          ⬡ Connect Monitor
-        </button>
-        <button class="btn btn-ghost" id="btn-monitor-disconnect" onclick="monitorDisconnect()" disabled style="flex:1;min-width:140px;border-color:#e05;color:#e05;">
-          ✕ Disconnect
-        </button>
-        <button class="btn btn-ghost" onclick="clearMonitor()" style="flex:1;min-width:100px;">
-          ⌫ Clear
-        </button>
-        <select id="monitor-baud" style="font-family:var(--mono);font-size:0.7rem;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:0.4rem 0.5rem;">
-          <option value="9600">9600</option>
-          <option value="115200" selected>115200</option>
-          <option value="921600">921600</option>
-        </select>
-        <span id="monitor-badge" class="badge badge-idle" style="margin-left:auto;">Disconnected</span>
-      </div>
-      <div id="monitor-terminal" style="
-        background:var(--bg);
-        border:1px solid var(--border);
-        border-radius:6px;
-        padding:0.75rem;
-        font-family:var(--mono);
-        font-size:0.65rem;
-        color:#aaa;
-        height:260px;
-        overflow-y:auto;
-        white-space:pre-wrap;
-        word-break:break-all;
-        line-height:1.6;
-      "><span style="color:var(--muted)">// Serial monitor output will appear here.
-// Connect to your ESP32 and press EN/RST to see boot messages.</span>
-</div>
+      <div class="field"><label>Subnet Mask</label><input type="text" id="static-sn" placeholder="255.255.255.0"></div>
     </div>
   </div>
 
-  <!-- Footer -->
-  <div style="text-align:center;margin-top:3rem;font-family:var(--mono);font-size:0.58rem;color:var(--muted);letter-spacing:0.15em;line-height:2;">
-    TALLY ARBITER ESP32 FLASHER &mdash; OPEN SOURCE<br>
-    REQUIRES CHROME / EDGE &mdash; WEB SERIAL API
+  <!-- Tally Arbiter -->
+  <div class="card">
+    <div class="card-label">// 02 &mdash; Tally Arbiter Server</div>
+    <div class="row2">
+      <div class="field">
+        <label>Server IP Address</label>
+        <input type="text" id="ta-host" placeholder="192.168.1.x" autocomplete="off" list="ta-host-history" onblur="saveHostHistory()">
+        <datalist id="ta-host-history"></datalist>
+      </div>
+      <div class="field narrow">
+        <label>Port</label>
+        <input type="number" id="ta-port" value="4455">
+      </div>
+    </div>
+    <div class="field">
+      <label>Listener Name</label>
+      <input type="text" id="listener-name" placeholder="esp32-tally-1" autocomplete="off">
+      <div class="hint">Shown in the TA Listeners panel. Leave blank to auto-generate from chip ID.</div>
+    </div>
+    <div class="divider"></div>
+    <div class="toggle-row">
+      <span class="toggle-label">CUT BUS — Program + Preview shows Red only</span>
+      <label class="toggle"><input type="checkbox" id="cut-bus" checked><span class="toggle-track"></span></label>
+    </div>
   </div>
 
-</div><!-- /page -->
+  <!-- Hardware -->
+  <div class="card">
+    <div class="card-label">// 03 &mdash; LED Hardware</div>
+    <div class="toggle-row" style="margin-bottom:.75rem">
+      <span class="toggle-label">LED Type</span>
+      <div style="display:flex;gap:.5rem">
+        <button class="btn btn-ghost" id="btn-led-2pin" onclick="setLedType('2pin')" style="padding:.3rem .8rem;font-size:.7rem;border-color:var(--red);color:var(--red)">● 2-Pin (R+G)</button>
+        <button class="btn btn-ghost" id="btn-led-rgb"  onclick="setLedType('rgb')"  style="padding:.3rem .8rem;font-size:.7rem">◉ 4-Pin RGB</button>
+      </div>
+    </div>
+    <div id="pins-2pin">
+      <div class="row2">
+        <div class="field"><label>Red Pin — Program</label><input type="number" id="pin-red" value="23"></div>
+        <div class="field"><label>Green Pin — Preview</label><input type="number" id="pin-green" value="22"></div>
+      </div>
+      <div class="hint">Two separate LEDs, each with a 220Ω resistor.</div>
+    </div>
+    <div id="pins-rgb" style="display:none">
+      <div class="row2">
+        <div class="field"><label>Red Pin</label><input type="number" id="pin-rgb-r" value="23"></div>
+        <div class="field"><label>Green Pin</label><input type="number" id="pin-rgb-g" value="22"></div>
+        <div class="field"><label>Blue Pin</label><input type="number" id="pin-rgb-b" value="21"></div>
+      </div>
+      <div class="toggle-row" style="margin-top:.5rem">
+        <span class="toggle-label">Common Anode (most 4-pin RGB LEDs)</span>
+        <label class="toggle"><input type="checkbox" id="rgb-common-anode" checked><span class="toggle-track"></span></label>
+      </div>
+      <div class="hint">Common Anode = 4th pin to 3.3V. Common Cathode = 4th pin to GND. Each colour needs 220Ω.</div>
+    </div>
+  </div>
+
+  <div class="btn-row" style="margin-top:1.5rem">
+    <button class="btn btn-primary btn-full" style="padding:1rem;font-size:.95rem" onclick="goToFlash()">
+      Next — Connect &amp; Flash →
+    </button>
+  </div>
+
+  <p style="text-align:center;margin-top:3rem;font-family:var(--mono);font-size:.55rem;color:var(--muted);letter-spacing:.15em;line-height:2">
+    TALLY ARBITER ESP32 FLASHER &mdash; OPEN SOURCE &mdash; REQUIRES CHROME / EDGE
+  </p>
+</div>
+
+
+<!-- ═══════════════════════════════════════════
+     SCREEN 2 — Flash Firmware
+════════════════════════════════════════════ -->
+<div class="screen" id="screen-2">
+  <header>
+    <div class="logo-row">
+      <div class="tally-indicator"><div class="dot r"></div><div class="dot g"></div></div>
+      <h1>Tally Arbiter</h1>
+      <div class="tally-indicator"><div class="dot g"></div><div class="dot r"></div></div>
+    </div>
+    <div class="tagline">ESP32 Web Flasher &mdash; v1.0</div>
+  </header>
+
+  <div class="steps">
+    <div class="step done"><div class="step-num">✓</div><div class="step-label">Configure</div></div>
+    <div class="step-line"></div>
+    <div class="step active"><div class="step-num">2</div><div class="step-label">Flash</div></div>
+    <div class="step-line"></div>
+    <div class="step"><div class="step-num">3</div><div class="step-label">Send Config</div></div>
+    <div class="step-line"></div>
+    <div class="step"><div class="step-num">4</div><div class="step-label">Done</div></div>
+  </div>
+
+  <div class="card lit">
+    <div class="card-label">// Flash Firmware</div>
+
+    <div class="alert alert-warn" style="margin-bottom:1.25rem">
+      <span class="alert-icon">⚡</span>
+      <div>
+        Plug your ESP32 in via USB, then click the button below.<br>
+        If it hangs at "Connecting…" hold the <strong>BOOT</strong> button on your ESP32 while clicking, release when it starts.
+      </div>
+    </div>
+
+    <div class="statusbar">
+      <span class="statusbar-left">Status</span>
+      <span id="flash-badge" class="badge badge-idle">Ready</span>
+    </div>
+
+    <button class="btn btn-primary btn-full" id="btn-flash" onclick="startFlash()" style="padding:1rem;font-size:1rem;margin-bottom:.5rem">
+      ▶ Connect &amp; Flash Firmware
+    </button>
+
+    <!-- Progress -->
+    <div class="progress-wrap" id="progress-wrap">
+      <div class="progress-header">
+        <span class="progress-label" id="progress-label"></span>
+        <span class="progress-pct" id="progress-pct">0%</span>
+      </div>
+      <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
+    </div>
+
+    <!-- Flash log -->
+    <div class="terminal" id="flash-log" style="height:200px">
+      <span class="log-dim">// Ready — click the button above to flash your ESP32.</span><br>
+    </div>
+  </div>
+
+  <!-- Advanced — collapsed by default -->
+  <details style="margin-top:.25rem">
+    <summary style="font-family:var(--mono);font-size:.62rem;letter-spacing:.2em;color:var(--muted);cursor:pointer;text-transform:uppercase;padding:.5rem 0;list-style:none;user-select:none">
+      ⚙ &nbsp;Advanced Options
+    </summary>
+    <div class="card" style="margin-top:.5rem">
+      <div class="card-label">// Recovery &amp; Config Tools</div>
+      <div class="hint" style="margin-bottom:1rem">Use these if you are recovering a broken device or updating settings without reflashing.</div>
+      <div class="btn-row" style="margin-top:0;flex-direction:column;gap:.5rem">
+        <button class="btn btn-ghost btn-full" onclick="sendConfigOnly()" style="border-color:var(--green);color:var(--green)">⟳ Send Config Only — no reflash</button>
+        <div class="btn-row" style="margin-top:0">
+          <button class="btn btn-ghost" onclick="eraseOnly()" style="flex:1;border-color:#ff9800;color:#ff9800">⚠ Erase Flash Only</button>
+          <button class="btn btn-ghost" onclick="startCleanFlash()" style="flex:1;border-color:#e040fb;color:#e040fb">☠ Erase + Flash Fresh</button>
+        </div>
+      </div>
+      <div class="hint" style="margin-top:.75rem;line-height:1.8">
+        <strong style="color:var(--green)">Send Config Only</strong> — sends WiFi &amp; TA settings to a device already running the firmware.<br>
+        <strong style="color:#ff9800">Erase Flash Only</strong> — wipes everything. Use when stuck in a reboot loop.<br>
+        <strong style="color:#e040fb">Erase + Flash Fresh</strong> — full chip erase then reflash from scratch.
+      </div>
+    </div>
+  </details>
+
+  <button class="btn btn-ghost" onclick="goTo(1)" style="margin-top:1rem;opacity:.5;font-size:.7rem">← Back to Settings</button>
+</div>
+
+
+<!-- ═══════════════════════════════════════════
+     SCREEN 3 — Send Config
+════════════════════════════════════════════ -->
+<div class="screen" id="screen-3">
+  <header>
+    <div class="logo-row">
+      <div class="tally-indicator"><div class="dot r"></div><div class="dot g"></div></div>
+      <h1>Tally Arbiter</h1>
+      <div class="tally-indicator"><div class="dot g"></div><div class="dot r"></div></div>
+    </div>
+    <div class="tagline">ESP32 Web Flasher &mdash; v1.0</div>
+  </header>
+
+  <div class="steps">
+    <div class="step done"><div class="step-num">✓</div><div class="step-label">Configure</div></div>
+    <div class="step-line"></div>
+    <div class="step done"><div class="step-num">✓</div><div class="step-label">Flash</div></div>
+    <div class="step-line"></div>
+    <div class="step active"><div class="step-num">3</div><div class="step-label">Send Config</div></div>
+    <div class="step-line"></div>
+    <div class="step"><div class="step-num">4</div><div class="step-label">Done</div></div>
+  </div>
+
+  <div class="card lit">
+    <div class="card-label">// Send Config to Device</div>
+
+    <div class="alert alert-info" style="margin-bottom:1.5rem">
+      <span class="alert-icon">①</span>
+      <div>
+        Firmware is written. The device is now waiting for your settings.<br>
+        <strong>Do not press EN/RST or unplug the device.</strong> Click the button below to send your WiFi and Tally Arbiter config over serial.
+      </div>
+    </div>
+
+    <!-- Config summary -->
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:1rem 1.25rem;margin-bottom:1.5rem;font-family:var(--mono);font-size:.7rem;line-height:2.2">
+      <div style="display:flex;justify-content:space-between;border-bottom:1px solid var(--border);padding-bottom:.4rem;margin-bottom:.4rem">
+        <span style="color:var(--muted);letter-spacing:.12em;text-transform:uppercase">WiFi</span>
+        <span id="sc-ssid" style="color:var(--text)">—</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;border-bottom:1px solid var(--border);padding-bottom:.4rem;margin-bottom:.4rem">
+        <span style="color:var(--muted);letter-spacing:.12em;text-transform:uppercase">TA Server</span>
+        <span id="sc-host" style="color:var(--text)">—</span>
+      </div>
+      <div style="display:flex;justify-content:space-between">
+        <span style="color:var(--muted);letter-spacing:.12em;text-transform:uppercase">Listener</span>
+        <span id="sc-lname" style="color:var(--text)">—</span>
+      </div>
+    </div>
+
+    <button class="btn btn-green btn-full" id="btn-sendcfg" onclick="doSendConfig()" style="padding:1rem;font-size:1rem;margin-bottom:1rem">
+      ▶ Send Config to Device
+    </button>
+
+    <div id="sc-status" style="font-family:var(--mono);font-size:.72rem;min-height:1.5rem;margin-bottom:.5rem;text-align:center"></div>
+
+    <!-- Config log -->
+    <div class="terminal" id="cfg-log" style="height:180px">
+      <span class="log-dim">// Waiting — click the button above to send config.</span><br>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════
+     SCREEN 4 — Done
+════════════════════════════════════════════ -->
+<div class="screen" id="screen-4" style="text-align:center">
+  <header>
+    <div class="logo-row">
+      <div class="tally-indicator"><div class="dot r"></div><div class="dot g"></div></div>
+      <h1>Tally Arbiter</h1>
+      <div class="tally-indicator"><div class="dot g"></div><div class="dot r"></div></div>
+    </div>
+    <div class="tagline">ESP32 Web Flasher &mdash; v1.0</div>
+  </header>
+
+  <div class="steps">
+    <div class="step done"><div class="step-num">✓</div><div class="step-label">Configure</div></div>
+    <div class="step-line"></div>
+    <div class="step done"><div class="step-num">✓</div><div class="step-label">Flash</div></div>
+    <div class="step-line"></div>
+    <div class="step done"><div class="step-num">✓</div><div class="step-label">Send Config</div></div>
+    <div class="step-line"></div>
+    <div class="step active"><div class="step-num">4</div><div class="step-label">Done</div></div>
+  </div>
+
+  <div class="big-tick">✓</div>
+  <div class="done-title">Device Ready</div>
+  <div class="done-sub">Your ESP32 tally listener is flashed and configured.</div>
+
+  <!-- Summary -->
+  <div style="background:var(--panel);border:1px solid var(--border);border-radius:4px;padding:1rem 1.5rem;margin-bottom:1.5rem;text-align:left;font-family:var(--mono);font-size:.7rem;line-height:2.4">
+    <div style="display:flex;justify-content:space-between;border-bottom:1px solid var(--border);padding-bottom:.4rem;margin-bottom:.4rem">
+      <span style="color:var(--muted);text-transform:uppercase;letter-spacing:.12em">WiFi Network</span>
+      <span id="done-ssid" style="color:var(--text)">—</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;border-bottom:1px solid var(--border);padding-bottom:.4rem;margin-bottom:.4rem">
+      <span style="color:var(--muted);text-transform:uppercase;letter-spacing:.12em">Tally Arbiter</span>
+      <span id="done-host" style="color:var(--text)">—</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;border-bottom:1px solid var(--border);padding-bottom:.4rem;margin-bottom:.4rem">
+      <span style="color:var(--muted);text-transform:uppercase;letter-spacing:.12em">Listener Name</span>
+      <span id="done-lname" style="color:var(--text)">—</span>
+    </div>
+    <div style="display:flex;justify-content:space-between">
+      <span style="color:var(--muted);text-transform:uppercase;letter-spacing:.12em">LED Type</span>
+      <span id="done-led" style="color:var(--text)">—</span>
+    </div>
+  </div>
+
+  <div class="alert alert-green" style="text-align:left;margin-bottom:2rem">
+    <span class="alert-icon">●</span>
+    <div>
+      <strong>LED status:</strong><br>
+      Alternating Red/Green = connecting to WiFi<br>
+      Solid Green = connected to Tally Arbiter and listening
+    </div>
+  </div>
+
+  <!-- Serial monitor — the only interactive element on this screen -->
+  <div class="card lit" style="text-align:left">
+    <div class="card-label">// Live Serial Output</div>
+    <p style="font-family:var(--mono);font-size:.68rem;color:var(--muted);margin-bottom:1rem;line-height:1.7">
+      Connect the serial monitor to watch your device boot and join the network. Press <strong>EN/RST</strong> on the ESP32 to trigger a fresh boot log.
+    </p>
+    <div style="display:flex;gap:.5rem;align-items:center;margin-bottom:.75rem;flex-wrap:wrap">
+      <button class="btn btn-ghost" id="btn-mon-connect" onclick="monConnect()" style="flex:1;min-width:160px">⬡ Connect Serial Monitor</button>
+      <button class="btn btn-ghost" id="btn-mon-disconnect" onclick="monDisconnect()" disabled style="border-color:#e05;color:#e05;flex:1;min-width:120px">✕ Disconnect</button>
+      <button class="btn btn-ghost" onclick="monClear()" style="min-width:80px">⌫ Clear</button>
+      <span id="mon-badge" class="badge badge-idle" style="margin-left:auto">Disconnected</span>
+    </div>
+    <div class="monitor-box" id="mon-terminal">// Connect to see live device output.
+</div>
+  </div>
+
+  <div class="btn-row" style="justify-content:center;margin-top:2rem">
+    <button class="btn btn-ghost" onclick="startOver()">← Flash Another Device</button>
+  </div>
+</div>
+
 
 <script>
-// ══════════════════════════════════════════════
+// ─────────────────────────────────────
 //  State
-// ══════════════════════════════════════════════
-let serialPort = null;
-let isFlashing = false;
+// ─────────────────────────────────────
+var serialPort  = null;
+var isFlashing  = false;
+var savedCfg    = null;
 
-// ══════════════════════════════════════════════
-//  Boot checks
-// ══════════════════════════════════════════════
-window.addEventListener('DOMContentLoaded', () => {
+var monPort   = null;
+var monReader = null;
+var monActive = false;
+
+// ─────────────────────────────────────
+//  Init
+// ─────────────────────────────────────
+window.addEventListener('DOMContentLoaded', function() {
   if (!('serial' in navigator)) {
     document.getElementById('browser-warn').style.display = 'block';
-    document.getElementById('main-content').style.display = 'none';
+    document.querySelectorAll('.screen').forEach(function(s){ s.style.display='none'; });
     return;
   }
   document.getElementById('listener-name').placeholder = 'esp32-tally-' + Math.floor(Math.random()*9000+1000);
-
-  // Load saved TA host history into datalist
   loadHostHistory();
 });
 
-function loadHostHistory() {
-  try {
-    var saved = JSON.parse(localStorage.getItem('ta-host-history') || '[]');
-    var dl = document.getElementById('ta-host-history');
-    dl.innerHTML = '';
-    saved.forEach(function(ip) {
-      var opt = document.createElement('option');
-      opt.value = ip;
-      dl.appendChild(opt);
-    });
-    // Pre-fill last used IP
-    if (saved.length > 0) {
-      document.getElementById('ta-host').value = saved[0];
-    }
-  } catch(_) {}
+// ─────────────────────────────────────
+//  Navigation
+// ─────────────────────────────────────
+function goTo(n) {
+  document.querySelectorAll('.screen').forEach(function(s){ s.classList.remove('active'); });
+  document.getElementById('screen-' + n).classList.add('active');
+  window.scrollTo(0, 0);
 }
 
-function saveHostHistory() {
-  try {
-    var ip = document.getElementById('ta-host').value.trim();
-    if (!ip) return;
-    var saved = JSON.parse(localStorage.getItem('ta-host-history') || '[]');
-    // Move to front, deduplicate, keep last 10
-    saved = [ip].concat(saved.filter(function(x) { return x !== ip; })).slice(0, 10);
-    localStorage.setItem('ta-host-history', JSON.stringify(saved));
-    loadHostHistory();
-  } catch(_) {}
+function goToFlash() {
+  var cfg = getConfig();
+  if (cfg.errors.length > 0) { alert(cfg.errors.join('\n')); return; }
+  saveHostHistory();
+  goTo(2);
 }
 
-// ══════════════════════════════════════════════
+// ─────────────────────────────────────
 //  Helpers
-// ══════════════════════════════════════════════
-function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
-
-function setStep(n) {
-  for (let i = 1; i <= 4; i++) {
-    const el = document.getElementById('step-' + i);
-    el.classList.remove('active','done');
-    if (i < n)  el.classList.add('done');
-    if (i === n) el.classList.add('active');
-  }
-}
+// ─────────────────────────────────────
+function delay(ms){ return new Promise(function(r){ setTimeout(r,ms); }); }
 
 function toggleStatic() {
-  const show = document.getElementById('use-static').checked;
-  document.getElementById('static-fields').style.display = show ? 'block' : 'none';
+  document.getElementById('static-fields').style.display =
+    document.getElementById('use-static').checked ? 'block' : 'none';
 }
 
-function log(msg, type) {
+function setLedType(type) {
+  var is2 = type === '2pin';
+  document.getElementById('pins-2pin').style.display = is2 ? 'block' : 'none';
+  document.getElementById('pins-rgb').style.display  = is2 ? 'none'  : 'block';
+  document.getElementById('btn-led-2pin').style.borderColor = is2 ? 'var(--red)' : '';
+  document.getElementById('btn-led-2pin').style.color       = is2 ? 'var(--red)' : '';
+  document.getElementById('btn-led-rgb').style.borderColor  = is2 ? '' : 'var(--red)';
+  document.getElementById('btn-led-rgb').style.color        = is2 ? '' : 'var(--red)';
+}
+
+function flashLog(msg, type) {
+  _appendLog('flash-log', msg, type);
+}
+function cfgLog(msg, type) {
+  _appendLog('cfg-log', msg, type);
+}
+function _appendLog(id, msg, type) {
   type = type || 'info';
-  const t = document.getElementById('terminal');
-  const line = document.createElement('span');
-  line.className = 'log-' + type;
-  const ts = new Date().toTimeString().slice(0,8);
-  line.textContent = '[' + ts + '] ' + msg;
-  t.appendChild(line);
+  var t = document.getElementById(id);
+  var s = document.createElement('span');
+  s.className = 'log-' + type;
+  s.textContent = '[' + new Date().toTimeString().slice(0,8) + '] ' + msg;
+  t.appendChild(s);
   t.appendChild(document.createElement('br'));
   t.scrollTop = t.scrollHeight;
 }
 
 function setProgress(pct, label) {
-  const wrap  = document.getElementById('progress-wrap');
-  const fill  = document.getElementById('progress-fill');
-  const lbl   = document.getElementById('progress-label');
-  const pctEl = document.getElementById('progress-pct');
-  wrap.classList.add('show');
+  document.getElementById('progress-wrap').classList.add('show');
+  var fill = document.getElementById('progress-fill');
   fill.style.width = pct + '%';
-  lbl.textContent  = label || '';
-  pctEl.textContent = Math.round(pct) + '%';
-  if (pct >= 100) fill.classList.add('done');
-  else            fill.classList.remove('done');
+  if (pct >= 100) fill.classList.add('done'); else fill.classList.remove('done');
+  document.getElementById('progress-label').textContent = label || '';
+  document.getElementById('progress-pct').textContent   = Math.round(pct) + '%';
 }
 
-function setBadge(id, text, type) {
-  const el = document.getElementById(id);
-  el.className = 'badge badge-' + type;
-  el.textContent = text;
+function setFlashBadge(txt, type) {
+  var b = document.getElementById('flash-badge');
+  b.className = 'badge badge-' + type;
+  b.textContent = txt;
 }
 
-// ══════════════════════════════════════════════
-//  Validation
-// ══════════════════════════════════════════════
-// ══════════════════════════════════════════════
-//  Build config blob for flash address 0x3D000
-//  Format: 4-byte magic + JSON string + null terminator
-//  Firmware reads this on first boot, applies to NVS, erases it, reboots
-// ══════════════════════════════════════════════
-function buildConfigBlob(cfg) {
-  var MAGIC = 0xCF6700FF;
-  var settings = {
+function setSCStatus(msg, type) {
+  var el = document.getElementById('sc-status');
+  var colours = { ok: 'var(--green)', error: 'var(--red)', warn: 'var(--amber)' };
+  el.style.color = colours[type] || 'var(--muted)';
+  el.textContent = msg;
+}
+
+// ─────────────────────────────────────
+//  Config
+// ─────────────────────────────────────
+function loadHostHistory() {
+  try {
+    var saved = JSON.parse(localStorage.getItem('ta-host-history') || '[]');
+    var dl = document.getElementById('ta-host-history');
+    dl.innerHTML = '';
+    saved.forEach(function(ip){
+      var o = document.createElement('option'); o.value = ip; dl.appendChild(o);
+    });
+    if (saved.length > 0) document.getElementById('ta-host').value = saved[0];
+  } catch(_){}
+}
+function saveHostHistory() {
+  try {
+    var ip = document.getElementById('ta-host').value.trim();
+    if (!ip) return;
+    var saved = JSON.parse(localStorage.getItem('ta-host-history') || '[]');
+    saved = [ip].concat(saved.filter(function(x){ return x !== ip; })).slice(0,10);
+    localStorage.setItem('ta-host-history', JSON.stringify(saved));
+    loadHostHistory();
+  } catch(_){}
+}
+
+function getConfig() {
+  var ssid      = document.getElementById('wifi-ssid').value.trim();
+  var pass      = document.getElementById('wifi-pass').value;
+  var taHost    = document.getElementById('ta-host').value.trim();
+  var taPort    = parseInt(document.getElementById('ta-port').value) || 4455;
+  var lName     = document.getElementById('listener-name').value.trim() || ('esp32-' + Date.now().toString(16).slice(-6));
+  var cutBus    = document.getElementById('cut-bus').checked;
+  var ledType   = document.getElementById('pins-rgb').style.display === 'none' ? '2pin' : 'rgb';
+  var pinRed    = parseInt(document.getElementById('pin-red').value)   || 23;
+  var pinGreen  = parseInt(document.getElementById('pin-green').value) || 22;
+  var pinRgbR   = parseInt(document.getElementById('pin-rgb-r').value) || 23;
+  var pinRgbG   = parseInt(document.getElementById('pin-rgb-g').value) || 22;
+  var pinRgbB   = parseInt(document.getElementById('pin-rgb-b').value) || 21;
+  var rgbAnode  = document.getElementById('rgb-common-anode').checked;
+  var useStatic = document.getElementById('use-static').checked;
+  var staticIp  = document.getElementById('static-ip').value.trim()  || '192.168.1.100';
+  var staticGw  = document.getElementById('static-gw').value.trim()  || '192.168.1.1';
+  var staticSn  = document.getElementById('static-sn').value.trim()  || '255.255.255.0';
+  var errors = [];
+  if (!ssid)   errors.push('WiFi SSID is required.');
+  if (!taHost) errors.push('Tally Arbiter Server IP is required.');
+  return { ssid, pass, taHost, taPort, lName, devId:'unassigned', cutBus,
+           ledType, pinRed, pinGreen, pinRgbR, pinRgbG, pinRgbB, rgbAnode,
+           useStatic, staticIp, staticGw, staticSn, errors };
+}
+
+function buildCFGPacket(cfg) {
+  return 'CFG:' + JSON.stringify({
     ssid: cfg.ssid, pass: cfg.pass,
     tahost: cfg.taHost, taport: cfg.taPort,
     lname: cfg.lName, devid: cfg.devId,
@@ -997,711 +678,371 @@ function buildConfigBlob(cfg) {
     rgbanode: cfg.rgbAnode ? 1 : 0,
     'static': cfg.useStatic ? 1 : 0,
     sip: cfg.staticIp, sgw: cfg.staticGw, ssn: cfg.staticSn
-  };
-  var json = JSON.stringify(settings);
-  var jsonBytes = new TextEncoder().encode(json + '\0'); // null terminate
-  var buf = new Uint8Array(4 + jsonBytes.length);
-  // Write magic little-endian
-  buf[0] = (MAGIC >>> 0)  & 0xFF;
-  buf[1] = (MAGIC >>> 8)  & 0xFF;
-  buf[2] = (MAGIC >>> 16) & 0xFF;
-  buf[3] = (MAGIC >>> 24) & 0xFF;
-  buf.set(jsonBytes, 4);
-  return buf.buffer;
+  }) + '\n';
 }
 
-function getConfig() {
-  const ssid      = document.getElementById('wifi-ssid').value.trim();
-  const pass      = document.getElementById('wifi-pass').value;
-  const taHost    = document.getElementById('ta-host').value.trim();
-  const taPort    = parseInt(document.getElementById('ta-port').value) || 4455;
-  const lName     = document.getElementById('listener-name').value.trim() || ('esp32-tally-' + Date.now().toString(16).slice(-6));
-  const devId     = document.getElementById('device-id').value.trim() || 'unassigned';
-  const cutBus    = document.getElementById('cut-bus').checked;
-  const ledType   = document.getElementById('pins-rgb').style.display === 'none' ? '2pin' : 'rgb';
-  const pinRed    = parseInt(document.getElementById('pin-red').value) || 23;
-  const pinGreen  = parseInt(document.getElementById('pin-green').value) || 22;
-  const pinRgbR   = parseInt(document.getElementById('pin-rgb-r').value) || 23;
-  const pinRgbG   = parseInt(document.getElementById('pin-rgb-g').value) || 22;
-  const pinRgbB   = parseInt(document.getElementById('pin-rgb-b').value) || 21;
-  const rgbAnode  = document.getElementById('rgb-common-anode').checked;
-  const useStatic = document.getElementById('use-static').checked;
-  const staticIp  = document.getElementById('static-ip').value.trim() || '192.168.1.100';
-  const staticGw  = document.getElementById('static-gw').value.trim() || '192.168.1.1';
-  const staticSn  = document.getElementById('static-sn').value.trim() || '255.255.255.0';
-  const errors = [];
-  if (!ssid)   errors.push('WiFi SSID is required.');
-  if (!taHost) errors.push('Tally Arbiter IP is required.');
-  return { ssid, pass, taHost, taPort, lName, devId, cutBus,
-           ledType, pinRed, pinGreen, pinRgbR, pinRgbG, pinRgbB, rgbAnode,
-           useStatic, staticIp, staticGw, staticSn, errors };
+// ─────────────────────────────────────
+//  Fetch firmware helpers
+// ─────────────────────────────────────
+async function fetchFirmware() {
+  var base = window.location.href.replace(/\/[^/]*$/, '/');
+  flashLog('Fetching firmware...', 'info');
+  var [fwRes, blRes, ptRes] = await Promise.all([
+    fetch(base + 'firmware/tally-arbiter-esp32.ino.bin'),
+    fetch(base + 'firmware/tally-arbiter-esp32.ino.bootloader.bin'),
+    fetch(base + 'firmware/tally-arbiter-esp32.ino.partitions.bin')
+  ]);
+  if (!fwRes.ok) throw new Error('Firmware not found (' + fwRes.status + ')');
+  if (!blRes.ok) throw new Error('Bootloader not found');
+  if (!ptRes.ok) throw new Error('Partitions not found');
+  var [fwBuf, blBuf, ptBuf] = await Promise.all([fwRes.arrayBuffer(), blRes.arrayBuffer(), ptRes.arrayBuffer()]);
+  flashLog('Firmware ' + (fwBuf.byteLength/1024).toFixed(1) + ' KB loaded.', 'ok');
+  return { fwBuf, blBuf, ptBuf };
 }
 
-function setLedType(type) {
-  var is2pin = type === '2pin';
-  document.getElementById('pins-2pin').style.display = is2pin ? 'block' : 'none';
-  document.getElementById('pins-rgb').style.display  = is2pin ? 'none'  : 'block';
-  document.getElementById('btn-led-2pin').style.borderColor = is2pin ? 'var(--red)' : '';
-  document.getElementById('btn-led-2pin').style.color       = is2pin ? 'var(--red)' : '';
-  document.getElementById('btn-led-rgb').style.borderColor  = is2pin ? '' : 'var(--red)';
-  document.getElementById('btn-led-rgb').style.color        = is2pin ? '' : 'var(--red)';
+async function connectESP() {
+  var ESPLoader = window._ESPLoader;
+  var Transport = window._Transport;
+  if (!ESPLoader || !Transport) throw new Error('esptool-js not loaded — please refresh');
+  flashLog('Select the ESP32 serial port...', 'warn');
+  serialPort = await navigator.serial.requestPort();
+  setFlashBadge('Port selected', 'ok');
+  var transport = new Transport(serialPort, true);
+  var esp = new ESPLoader({ transport, baudrate: 115200, terminal: {
+    clean: function(){},
+    writeLine: function(s){ flashLog(s,'dim'); },
+    write:     function(s){ flashLog(s,'dim'); }
+  }});
+  setProgress(15, 'Connecting to chip...');
+  flashLog('Connecting — hold BOOT + tap EN/RST if this hangs', 'warn');
+  await esp.main();
+  flashLog('Chip: ' + esp.chip.CHIP_NAME, 'ok');
+  return { esp, transport };
 }
 
-// ══════════════════════════════════════════════
-//  Serial Connect
-// ══════════════════════════════════════════════
-async function connectSerial() {
-  const btn = document.getElementById('btn-connect');
-  btn.disabled = true;
-  btn.textContent = 'Connecting...';
-  try {
-    serialPort = await navigator.serial.requestPort();
-    const info = serialPort.getInfo();
-    log('Port selected. VID:0x' + (info.usbVendorId||0).toString(16).padStart(4,'0') +
-        ' PID:0x' + (info.usbProductId||0).toString(16).padStart(4,'0'), 'ok');
-    setBadge('port-badge', 'Port selected', 'ok');
-    document.getElementById('btn-flash').disabled = false;
-    document.getElementById('btn-cfg-only').disabled = false;
-    document.getElementById('btn-erase').disabled = false;
-    document.getElementById('btn-clean-flash').disabled = false;
-    btn.textContent = 'Change Port';
-    btn.disabled = false;
-    setStep(2);
-  } catch(e) {
-    btn.textContent = 'Connect Device';
-    btn.disabled = false;
-    if (e.name !== 'NotFoundError') {
-      log('Connect error: ' + e.message, 'error');
-    } else {
-      log('Port not selected — try again.', 'warn');
+async function writeFiles(esp, fwBuf, blBuf, ptBuf, progressOffset) {
+  progressOffset = progressOffset || 20;
+  var files = [
+    { name:'bootloader', data:blBuf, address:0x1000  },
+    { name:'partitions', data:ptBuf, address:0x8000  },
+    { name:'firmware',   data:fwBuf, address:0x10000 }
+  ];
+  setProgress(progressOffset, 'Changing baud rate...');
+  await esp.changeBaud(921600);
+  flashLog('Writing firmware to flash...', 'info');
+  await esp.writeFlash({
+    fileArray: files.map(function(f){
+      return { data: esp.ui8ToBstr(new Uint8Array(f.data)), address: f.address };
+    }),
+    flashSize:'keep', flashMode:'keep', flashFreq:'keep',
+    eraseAll:false, compress:true,
+    reportProgress: function(fi, written, total) {
+      setProgress(progressOffset + (written/total) * (90 - progressOffset),
+        'Writing ' + files[fi].name + '... ' + Math.round(written/1024) + '/' + Math.round(total/1024) + ' KB');
     }
-  }
+  });
 }
 
-// ══════════════════════════════════════════════
-//  Flash Firmware
-// ══════════════════════════════════════════════
+// ─────────────────────────────────────
+//  FLASH FIRMWARE
+// ─────────────────────────────────────
 async function startFlash() {
   if (isFlashing) return;
-  const cfg = getConfig();
-  if (cfg.errors.length > 0) { cfg.errors.forEach(function(e) { log('x ' + e, 'error'); }); return; }
-
+  var cfg = getConfig();
+  if (cfg.errors.length > 0) { cfg.errors.forEach(function(e){ flashLog(e,'error'); }); return; }
+  savedCfg = cfg;
   isFlashing = true;
-  setStep(3);
   document.getElementById('btn-flash').disabled = true;
-  document.getElementById('btn-cfg-only').disabled = true;
-  document.getElementById('btn-connect').disabled = true;
-
-  saveHostHistory(); // remember this IP for next time
-  log('Starting flash sequence...', 'heading');
-  log('SSID: ' + cfg.ssid, 'info');
-  log('TA Server: ' + cfg.taHost + ':' + cfg.taPort, 'info');
-  log('Listener: ' + cfg.lName, 'info');
+  setFlashBadge('Working...', 'warn');
 
   try {
     setProgress(5, 'Fetching firmware...');
-    log('Fetching firmware binary...', 'info');
+    var fw = await fetchFirmware();
 
-    const base = window.location.href.replace(/\/[^/]*$/, '/');
-    const fwRes  = await fetch(base + 'firmware/tally-arbiter-esp32.ino.bin');
-    if (!fwRes.ok) throw new Error('Firmware fetch failed: ' + fwRes.status);
-    const fwBuf = await fwRes.arrayBuffer();
-    log('Firmware: ' + (fwBuf.byteLength / 1024).toFixed(1) + ' KB', 'ok');
+    var conn = await connectESP();
+    await writeFiles(conn.esp, fw.fwBuf, fw.blBuf, fw.ptBuf, 20);
 
-    log('Fetching bootloader & partition table...', 'info');
-    const [blRes, ptRes] = await Promise.all([
-      fetch(base + 'firmware/tally-arbiter-esp32.ino.bootloader.bin'),
-      fetch(base + 'firmware/tally-arbiter-esp32.ino.partitions.bin')
-    ]);
-    if (!blRes.ok) throw new Error('Bootloader fetch failed');
-    if (!ptRes.ok) throw new Error('Partitions fetch failed');
-    const blBuf = await blRes.arrayBuffer();
-    const ptBuf = await ptRes.arrayBuffer();
-
-    setProgress(10, 'Connecting to bootloader...');
-    log('Connecting to bootloader... hold BOOT + tap EN/RST if this hangs', 'warn');
-
-    const ESPLoader  = window._ESPLoader;
-    const Transport  = window._Transport;
-    if (!ESPLoader || !Transport) throw new Error('esptool-js not loaded yet — please refresh and try again');
-
-    const transport = new Transport(serialPort, true);
-    const espLoader = new ESPLoader({
-      transport,
-      baudrate: 115200,
-      terminal: {
-        clean: function() {},
-        writeLine: function(s) { log(s, 'dim'); },
-        write:     function(s) { log(s, 'dim'); }
-      }
-    });
-
-    await espLoader.main();
-    log('Chip detected: ' + espLoader.chip.CHIP_NAME, 'ok');
-    setProgress(15, 'Changing baud rate...');
-    await espLoader.changeBaud(921600);
-    log('Changing baudrate to 921600', 'info');
-    log('Changed', 'ok');
-
-    const flashFiles = [
-      { name: 'bootloader', data: blBuf, address: 0x1000  },
-      { name: 'partitions', data: ptBuf, address: 0x8000  },
-      { name: 'firmware',   data: fwBuf, address: 0x10000 }
-    ];
-
-    log('Fetching bootloader & partition table...', 'info');
-    log('Writing ' + flashFiles.length + ' file(s) to flash...', 'info');
-
-    const fileArray = flashFiles.map(function(f) {
-      return { data: espLoader.ui8ToBstr(new Uint8Array(f.data)), address: f.address };
-    });
-
-    await espLoader.writeFlash({
-      fileArray: fileArray,
-      flashSize: 'keep',
-      flashMode: 'keep',
-      flashFreq: 'keep',
-      eraseAll:  false,
-      compress:  true,
-      reportProgress: function(fileIndex, written, total) {
-        var pct = 20 + (written / total) * 75;
-        setProgress(pct, 'Writing ' + flashFiles[fileIndex].name + '... ' +
-          Math.round(written/1024) + '/' + Math.round(total/1024) + ' KB');
-      }
-    });
-
-    setProgress(96, 'Resetting device...');
-    log('Flashing complete!', 'ok');
-    try { await espLoader.softReset(); } catch(_) {}
-    try { await transport.disconnect(); } catch(_) {}
-    serialPort = null; // release port fully
-
-    setProgress(100, 'Done!');
-    log('Firmware written. Now click "Send Config to Device" to write your settings.', 'ok');
-    showSuccess(cfg);
-
-  } catch(err) {
-    log('Flash error: ' + err.message, 'error');
-    log('Disconnect and reconnect the USB cable, then click Connect Device again.', 'warn');
-    setBadge('port-badge', 'Flash failed', 'error');
+    setProgress(97, 'Resetting...');
+    flashLog('Flash complete!', 'ok');
+    try { await conn.esp.softReset(); } catch(_) {}
+    try { await conn.transport.disconnect(); } catch(_) {}
     serialPort = null;
-    document.getElementById('btn-connect').disabled = false;
-    document.getElementById('btn-connect').textContent = 'Connect Device';
-    document.getElementById('btn-flash').disabled = true;
-    document.getElementById('btn-cfg-only').disabled = true;
-    document.getElementById('btn-erase').disabled = true;
-    document.getElementById('btn-clean-flash').disabled = true;
-    setStep(2);
+    setProgress(100, 'Done!');
+    setFlashBadge('Flashed ✓', 'ok');
+    flashLog('Moving to Send Config step...', 'ok');
+
+    await delay(800);
+    populateSendConfig(cfg);
+    goTo(3);
+
+  } catch(e) {
+    flashLog('Error: ' + e.message, 'error');
+    setFlashBadge('Failed', 'error');
+    serialPort = null;
   } finally {
     isFlashing = false;
     document.getElementById('btn-flash').disabled = false;
-    document.getElementById('btn-cfg-only').disabled = false;
   }
 }
 
-// ══════════════════════════════════════════════
-//  Write NVS Settings via Serial after flash
-//  Must request a fresh port — esptool-js holds
-//  the original port and close() doesn't release it
-// ══════════════════════════════════════════════
-async function writeNVSSettings(cfg) {
-  var cfgPort = null;
-  try {
-    // No delay — device is already waiting for CFG packet.
-    // Request port immediately as part of this fresh user gesture.
-    log('Select the serial port to send config...', 'warn');
-    cfgPort = await navigator.serial.requestPort();
-
-    // Close in case it was left open from a previous attempt
-    try { await cfgPort.close(); } catch(_) {}
-    await delay(200);
-    await cfgPort.open({ baudRate: 115200 });
-    log('Port open. Sending config immediately...', 'ok');
-
-    var encoder = new TextEncoder();
-    var writer  = cfgPort.writable.getWriter();
-    var reader  = cfgPort.readable.getReader();
-
-    var settings = {
-      ssid: cfg.ssid, pass: cfg.pass,
-      tahost: cfg.taHost, taport: cfg.taPort,
-      lname: cfg.lName, devid: cfg.devId,
-      cutbus: cfg.cutBus ? 1 : 0,
-      pinr: cfg.pinRed, ping: cfg.pinGreen,
-      ledtype: cfg.ledType, pinrgbr: cfg.pinRgbR, pinrgbg: cfg.pinRgbG, pinrgbb: cfg.pinRgbB,
-      rgbanode: cfg.rgbAnode ? 1 : 0,
-      'static': cfg.useStatic ? 1 : 0,
-      sip: cfg.staticIp, sgw: cfg.staticGw, ssn: cfg.staticSn
-    };
-
-    var cmd = 'CFG:' + JSON.stringify(settings) + '\n';
-    log('→ ssid:"' + cfg.ssid + '"  tahost:"' + cfg.taHost + ':' + cfg.taPort + '"', 'info');
-
-    // Send it twice with a short gap — device may still be in early boot
-    await writer.write(encoder.encode(cmd));
-    await delay(800);
-    await writer.write(encoder.encode(cmd));
-    log('Config sent (×2). Waiting for confirmation...', 'ok');
-
-    // Read back confirmation
-    var confBuf = '';
-    var confDeadline = Date.now() + 6000;
-    while (Date.now() < confDeadline) {
-      try {
-        var cr = await Promise.race([
-          reader.read(),
-          delay(100).then(function() { return { value: null }; })
-        ]);
-        if (cr.value) {
-          var resp = new TextDecoder().decode(cr.value);
-          confBuf += resp;
-          resp.split('\n').forEach(function(l) {
-            if (l.trim()) log('← ' + l.trim(), l.toLowerCase().indexOf('saved') >= 0 ? 'ok' : 'dim');
-          });
-          if (confBuf.indexOf('saved') >= 0 || confBuf.indexOf('Rebooting') >= 0) break;
-        }
-      } catch(_) { break; }
-    }
-
-    writer.releaseLock();
-    try { reader.cancel(); } catch(_) {}
-    try { reader.releaseLock(); } catch(_) {}
-    try { await cfgPort.close(); } catch(_) {}
-
-    if (confBuf.indexOf('saved') >= 0 || confBuf.indexOf('Rebooting') >= 0) {
-      log('✓ Config confirmed! Device rebooting.', 'ok');
-
-    } else {
-      log('No confirmation received. If the device reboots with wrong settings, press EN/RST and click Send Config again.', 'warn');
-    }
-
-  } catch(e) {
-    if (e.name === 'NotFoundError') {
-      log('Port not selected — click "Send Config to Device" again.', 'warn');
-    } else {
-      log('Config error: ' + e.message, 'error');
-    }
-    if (cfgPort) { try { await cfgPort.close(); } catch(_) {} }
-
-  }
-}
-
-// ══════════════════════════════════════════════
-//  Send Config (no reflash) — also called after flash
-// ══════════════════════════════════════════════
-async function sendConfigOnly() {
-  var cfg = getConfig();
-  if (cfg.errors.length > 0) { cfg.errors.forEach(function(e) { log(e, 'error'); }); return; }
-
-  log('─── Send Config ───', 'heading');
-  log('SSID: ' + cfg.ssid + '  TA: ' + cfg.taHost + ':' + cfg.taPort, 'info');
-
-  var cfgPort = null;
-  try {
-    document.getElementById('btn-cfg-only').disabled = true;
-
-    cfgPort = await navigator.serial.requestPort();
-    try { await cfgPort.close(); } catch(_) {}
-    await delay(300);
-    await cfgPort.open({ baudRate: 115200 });
-    log('Port open.', 'ok');
-    setBadge('port-badge', 'Sending config...', 'warn');
-
-    var encoder = new TextEncoder();
-    var writer  = cfgPort.writable.getWriter();
-    var reader  = cfgPort.readable.getReader();
-
-    var settings = {
-      ssid: cfg.ssid, pass: cfg.pass,
-      tahost: cfg.taHost, taport: cfg.taPort,
-      lname: cfg.lName, devid: cfg.devId,
-      cutbus: cfg.cutBus ? 1 : 0,
-      pinr: cfg.pinRed, ping: cfg.pinGreen,
-      ledtype: cfg.ledType, pinrgbr: cfg.pinRgbR, pinrgbg: cfg.pinRgbG, pinrgbb: cfg.pinRgbB,
-      rgbanode: cfg.rgbAnode ? 1 : 0,
-      'static': cfg.useStatic ? 1 : 0,
-      sip: cfg.staticIp, sgw: cfg.staticGw, ssn: cfg.staticSn
-    };
-
-    var cmd = 'CFG:' + JSON.stringify(settings) + '\n';
-    log('Sending ' + (cmd.length - 5) + ' byte config packet...', 'info');
-
-    // Send immediately — no boot-message wait
-    // Device firmware loops on checkSerialConfig() with 5s readline timeout
-    await writer.write(encoder.encode(cmd));
-    log('Packet sent. Waiting for confirmation...', 'ok');
-
-    // Read up to 8s for confirmation
-    var confBuf = '';
-    var confDeadline = Date.now() + 8000;
-    while (Date.now() < confDeadline) {
-      try {
-        var cr = await Promise.race([
-          reader.read(),
-          delay(100).then(function() { return { value: null }; })
-        ]);
-        if (cr.value) {
-          var resp = new TextDecoder().decode(cr.value);
-          confBuf += resp;
-          resp.split('\n').forEach(function(l) {
-            if (l.trim()) log('← ' + l.trim(), l.indexOf('saved') >= 0 || l.indexOf('CFG') >= 0 ? 'ok' : 'dim');
-          });
-          if (confBuf.indexOf('CFG saved') >= 0 || confBuf.indexOf('Rebooting') >= 0) break;
-        }
-      } catch(_) { break; }
-    }
-
-    writer.releaseLock();
-    try { reader.cancel(); } catch(_) {}
-    try { reader.releaseLock(); } catch(_) {}
-    try { await cfgPort.close(); } catch(_) {}
-
-    if (confBuf.indexOf('CFG saved') >= 0 || confBuf.indexOf('Rebooting') >= 0) {
-      setBadge('port-badge', 'Config saved!', 'ok');
-      log('✓ Config saved — device rebooting.', 'ok');
-    } else {
-      setBadge('port-badge', 'No confirmation', 'error');
-      log('No confirmation received. Check serial monitor for errors and try again.', 'warn');
-    }
-
-  } catch(e) {
-    if (e.name === 'NotFoundError') log('Port not selected — try again.', 'warn');
-    else log('Config error: ' + e.message, 'error');
-    if (cfgPort) { try { await cfgPort.close(); } catch(_) {} }
-  } finally {
-    document.getElementById('btn-cfg-only').disabled = false;
-  }
-}
-
-// ══════════════════════════════════════════════
-//  Success / Reset
-// ══════════════════════════════════════════════
-function showSuccess(cfg) {
-  document.getElementById('success-screen').classList.add('show');
-  document.getElementById('done-ssid').textContent = cfg.ssid;
-  document.getElementById('done-host').textContent = cfg.taHost + ':' + cfg.taPort;
-  // Re-show the flash card so Update Config Only is visible and usable
-  document.getElementById('card-flash').style.display = 'block';
-  // Highlight the Update Config Only button
-  var cfgBtn = document.getElementById('btn-cfg-only');
-  cfgBtn.style.animation = 'none';
-  cfgBtn.style.boxShadow = '0 0 0 2px var(--green)';
-  cfgBtn.disabled = false;
-  setStep(4);
-}
-
-
-
-function resetFlasher() {
-  document.querySelectorAll('.card').forEach(function(c) { c.style.display = 'block'; });
-  document.getElementById('success-screen').classList.remove('show');
-  document.getElementById('btn-flash').disabled = true;
-  document.getElementById('btn-cfg-only').disabled = true;
-  document.getElementById('btn-erase').disabled = true;
-  document.getElementById('btn-clean-flash').disabled = true;
-  var btnConnect = document.getElementById('btn-connect');
-  btnConnect.disabled = false;
-  btnConnect.textContent = 'Connect Device';
-  setBadge('port-badge', 'Not connected', 'idle');
-  document.getElementById('progress-wrap').classList.remove('show');
-  document.getElementById('terminal').innerHTML = '<span class="log-dim">// Ready for next flash.</span><br>';
-  serialPort = null;
-  setStep(1);
-}
-
-// ══════════════════════════════════════════════
-//  Shared: connect esptool, run callback, disconnect
-// ══════════════════════════════════════════════
-async function withESPLoader(callback) {
-  var ESPLoader = window._ESPLoader;
-  var Transport = window._Transport;
-  if (!ESPLoader || !Transport) throw new Error('esptool-js not loaded — refresh and try again');
-
-  var transport = new Transport(serialPort, true);
-  var espLoader = new ESPLoader({
-    transport: transport,
-    baudrate: 115200,
-    terminal: {
-      clean: function() {},
-      writeLine: function(s) { log(s, 'dim'); },
-      write:     function(s) { log(s, 'dim'); }
-    }
-  });
-
-  await espLoader.main();
-  log('Chip: ' + espLoader.chip.CHIP_NAME, 'ok');
-  await callback(espLoader);
-  try { await espLoader.softReset(); } catch(_) {}
-  try { await transport.disconnect(); } catch(_) {}
-}
-
-// ══════════════════════════════════════════════
-//  Erase Flash Only
-// ══════════════════════════════════════════════
+// ─────────────────────────────────────
+//  ERASE ONLY
+// ─────────────────────────────────────
 async function eraseOnly() {
   if (isFlashing) return;
   isFlashing = true;
-  setAllBtnsDisabled(true);
-  log('─── Erase Flash Only ───', 'heading');
-  log('Hold BOOT + tap EN/RST to enter flash mode...', 'warn');
-  setProgress(10, 'Connecting...');
-
+  document.getElementById('btn-flash').disabled = true;
+  setFlashBadge('Erasing...', 'warn');
   try {
-    await withESPLoader(async function(esp) {
-      setProgress(30, 'Erasing entire flash — takes ~10 seconds...');
-      log('Erasing flash...', 'warn');
-      await esp.eraseFlash();
-      setProgress(100, 'Erase complete!');
-      log('✓ Flash erased successfully.', 'ok');
-      log('⚠ DO NOT press EN/RST — the chip is now blank and will crash if reset.', 'warn');
-      log('▶ Now click "Erase + Flash Fresh" to reflash the firmware.', 'ok');
-      setBadge('port-badge', 'Erased — reflash now', 'warn');
-    });
+    var ESPLoader = window._ESPLoader, Transport = window._Transport;
+    if (!ESPLoader || !Transport) throw new Error('esptool-js not loaded — refresh');
+    serialPort = await navigator.serial.requestPort();
+    var transport = new Transport(serialPort, true);
+    var esp = new ESPLoader({ transport, baudrate:115200, terminal:{
+      clean:function(){}, writeLine:function(s){flashLog(s,'dim');}, write:function(s){flashLog(s,'dim');}
+    }});
+    setProgress(10, 'Connecting...');
+    await esp.main();
+    flashLog('Chip: ' + esp.chip.CHIP_NAME, 'ok');
+    setProgress(30, 'Erasing — takes ~10 seconds...');
+    flashLog('Erasing flash...', 'warn');
+    await esp.eraseFlash();
+    setProgress(100, 'Erase complete');
+    flashLog('✓ Flash erased.', 'ok');
+    flashLog('Now use "Erase + Flash Fresh" to reflash, or unplug and replug USB.', 'warn');
+    setFlashBadge('Erased', 'warn');
+    try { await transport.disconnect(); } catch(_) {}
+    serialPort = null;
   } catch(e) {
-    log('Erase error: ' + e.message, 'error');
-    setBadge('port-badge', 'Error', 'error');
+    flashLog('Error: ' + e.message, 'error');
+    setFlashBadge('Failed', 'error');
+    serialPort = null;
   } finally {
     isFlashing = false;
-    setAllBtnsDisabled(false);
+    document.getElementById('btn-flash').disabled = false;
   }
 }
 
-// ══════════════════════════════════════════════
-//  Erase + Flash Fresh (full clean flash)
-// ══════════════════════════════════════════════
+// ─────────────────────────────────────
+//  ERASE + FLASH FRESH
+// ─────────────────────────────────────
 async function startCleanFlash() {
   if (isFlashing) return;
   var cfg = getConfig();
-  if (cfg.errors.length > 0) { cfg.errors.forEach(function(e) { log('x ' + e, 'error'); }); return; }
-
+  if (cfg.errors.length > 0) { cfg.errors.forEach(function(e){ flashLog(e,'error'); }); return; }
+  savedCfg = cfg;
   isFlashing = true;
-  setAllBtnsDisabled(true);
-  setStep(3);
-  log('─── Erase + Clean Flash ───', 'heading');
-  log('SSID: ' + cfg.ssid, 'info');
-  log('TA Server: ' + cfg.taHost + ':' + cfg.taPort, 'info');
-
+  document.getElementById('btn-flash').disabled = true;
+  setFlashBadge('Working...', 'warn');
   try {
     setProgress(5, 'Fetching firmware...');
-    var base = window.location.href.replace(/\/[^/]*$/, '/');
-    var fwRes = await fetch(base + 'firmware/tally-arbiter-esp32.ino.bin');
-    if (!fwRes.ok) throw new Error('Firmware fetch failed: ' + fwRes.status);
-    var fwBuf = await fwRes.arrayBuffer();
-    log('Firmware: ' + (fwBuf.byteLength / 1024).toFixed(1) + ' KB', 'ok');
+    var fw = await fetchFirmware();
+    var conn = await connectESP();
 
-    var blRes = await fetch(base + 'firmware/tally-arbiter-esp32.ino.bootloader.bin');
-    var ptRes = await fetch(base + 'firmware/tally-arbiter-esp32.ino.partitions.bin');
-    if (!blRes.ok) throw new Error('Bootloader fetch failed');
-    if (!ptRes.ok) throw new Error('Partitions fetch failed');
-    var blBuf = await blRes.arrayBuffer();
-    var ptBuf = await ptRes.arrayBuffer();
+    setProgress(20, 'Erasing flash — ~10 seconds...');
+    flashLog('Erasing flash...', 'warn');
+    await conn.esp.eraseFlash();
+    flashLog('Erased.', 'ok');
 
-    setProgress(10, 'Connecting...');
-    log('Hold BOOT + tap EN/RST if this hangs...', 'warn');
+    await writeFiles(conn.esp, fw.fwBuf, fw.blBuf, fw.ptBuf, 35);
 
-    var ESPLoader = window._ESPLoader;
-    var Transport = window._Transport;
-    if (!ESPLoader || !Transport) throw new Error('esptool-js not loaded — refresh and try again');
-
-    var transport = new Transport(serialPort, true);
-    var espLoader = new ESPLoader({
-      transport: transport,
-      baudrate: 115200,
-      terminal: {
-        clean: function() {},
-        writeLine: function(s) { log(s, 'dim'); },
-        write:     function(s) { log(s, 'dim'); }
-      }
-    });
-
-    await espLoader.main();
-    log('Chip: ' + espLoader.chip.CHIP_NAME, 'ok');
-
-    setProgress(20, 'Erasing entire flash...');
-    log('Erasing flash — this takes ~10 seconds...', 'warn');
-    await espLoader.eraseFlash();
-    log('Flash erased.', 'ok');
-
-    setProgress(30, 'Changing baud rate...');
-    await espLoader.changeBaud(921600);
-
-    var flashFiles = [
-      { name: 'bootloader', data: blBuf, address: 0x1000  },
-      { name: 'partitions', data: ptBuf, address: 0x8000  },
-      { name: 'firmware',   data: fwBuf, address: 0x10000 }
-    ];
-
-    log('Writing ' + flashFiles.length + ' file(s) to flash...', 'info');
-    await espLoader.writeFlash({
-      fileArray: flashFiles.map(function(f) {
-        return { data: espLoader.ui8ToBstr(new Uint8Array(f.data)), address: f.address };
-      }),
-      flashSize: 'keep', flashMode: 'keep', flashFreq: 'keep',
-      eraseAll: false, compress: true,
-      reportProgress: function(fi, written, total) {
-        var pct = 30 + (written / total) * 60;
-        setProgress(pct, 'Writing ' + flashFiles[fi].name + '... ' +
-          Math.round(written/1024) + '/' + Math.round(total/1024) + ' KB');
-      }
-    });
-
-    setProgress(92, 'Resetting...');
-    log('Flash complete.', 'ok');
-    try { await espLoader.softReset(); } catch(_) {}
-    try { await transport.disconnect(); } catch(_) {}
-    serialPort = null; // release port fully
-
+    setProgress(97, 'Resetting...');
+    flashLog('Flash complete!', 'ok');
+    try { await conn.esp.softReset(); } catch(_) {}
+    try { await conn.transport.disconnect(); } catch(_) {}
+    serialPort = null;
     setProgress(100, 'Done!');
-    log('Firmware written. Now click "Send Config to Device" to write your settings.', 'ok');
-    showSuccess(cfg);
+    setFlashBadge('Flashed ✓', 'ok');
+
+    await delay(800);
+    populateSendConfig(cfg);
+    goTo(3);
 
   } catch(e) {
-    log('Clean flash error: ' + e.message, 'error');
-    setBadge('port-badge', 'Failed', 'error');
+    flashLog('Error: ' + e.message, 'error');
+    setFlashBadge('Failed', 'error');
     serialPort = null;
-    setAllBtnsDisabled(false);
-    document.getElementById('btn-connect').disabled = false;
-    document.getElementById('btn-connect').textContent = 'Connect Device';
-    setStep(2);
   } finally {
     isFlashing = false;
+    document.getElementById('btn-flash').disabled = false;
   }
 }
 
-function setAllBtnsDisabled(disabled) {
-  ['btn-flash','btn-cfg-only','btn-erase','btn-clean-flash','btn-connect'].forEach(function(id) {
-    document.getElementById(id).disabled = disabled;
-  });
+// ─────────────────────────────────────
+//  SEND CONFIG ONLY (advanced option)
+// ─────────────────────────────────────
+async function sendConfigOnly() {
+  var cfg = getConfig();
+  if (cfg.errors.length > 0) { cfg.errors.forEach(function(e){ flashLog(e,'error'); }); return; }
+  savedCfg = cfg;
+  populateSendConfig(cfg);
+  goTo(3);
 }
 
-// ══════════════════════════════════════════════
-//  Success screen serial monitor
-// ══════════════════════════════════════════════
-var successMonitorReader = null;
-var successMonitorActive = false;
-
-function successMonitorLog(text) {
-  var t = document.getElementById('success-monitor-terminal');
-  t.textContent += text;
-  t.scrollTop = t.scrollHeight;
+// ─────────────────────────────────────
+//  Populate Screen 3
+// ─────────────────────────────────────
+function populateSendConfig(cfg) {
+  document.getElementById('sc-ssid').textContent  = cfg.ssid;
+  document.getElementById('sc-host').textContent  = cfg.taHost + ':' + cfg.taPort;
+  document.getElementById('sc-lname').textContent = cfg.lName;
+  document.getElementById('sc-status').textContent = '';
+  document.getElementById('btn-sendcfg').disabled = false;
+  // Clear old log
+  document.getElementById('cfg-log').innerHTML = '<span class="log-dim">// Click the button above to send your settings.</span><br>';
 }
 
-async function successMonitorConnect() {
+// ─────────────────────────────────────
+//  DO SEND CONFIG
+// ─────────────────────────────────────
+async function doSendConfig() {
+  var cfg = savedCfg || getConfig();
+  var btn = document.getElementById('btn-sendcfg');
+  btn.disabled = true;
+  setSCStatus('Opening port...', 'warn');
+
+  var port = null;
   try {
-    document.getElementById('btn-success-monitor').disabled = true;
-
-    // Try to reuse serialPort if still available, otherwise ask
-    var port = serialPort;
-    if (!port) {
-      port = await navigator.serial.requestPort();
-    }
-
+    port = await navigator.serial.requestPort();
     try { await port.close(); } catch(_) {}
     await delay(300);
     await port.open({ baudRate: 115200 });
 
-    successMonitorActive = true;
-    document.getElementById('success-monitor-badge').className = 'badge badge-ok';
-    document.getElementById('success-monitor-badge').textContent = 'Connected';
-    document.getElementById('btn-success-monitor-stop').disabled = false;
-    successMonitorLog('// Connected — press EN/RST or power cycle to see boot messages.\n\n');
+    cfgLog('Port open — sending config packet...', 'ok');
+    setSCStatus('Sending...', 'warn');
 
-    successMonitorReader = port.readable.getReader();
-    var decoder = new TextDecoder();
-    while (successMonitorActive) {
+    var cmd = buildCFGPacket(cfg);
+    cfgLog('ssid:"' + cfg.ssid + '"  tahost:"' + cfg.taHost + ':' + cfg.taPort + '"  bytes:' + (cmd.length-5), 'info');
+
+    var encoder = new TextEncoder();
+    var writer  = port.writable.getWriter();
+    var reader  = port.readable.getReader();
+
+    // Send immediately — firmware has 5s readline timeout
+    await writer.write(encoder.encode(cmd));
+    cfgLog('Packet sent. Waiting for confirmation...', 'info');
+
+    var buf = '';
+    var deadline = Date.now() + 8000;
+    while (Date.now() < deadline) {
       try {
-        var result = await successMonitorReader.read();
-        if (result.done || !successMonitorActive) break;
-        if (result.value) successMonitorLog(decoder.decode(result.value));
+        var r = await Promise.race([reader.read(), delay(100).then(function(){ return {value:null}; })]);
+        if (r.value) {
+          var txt = new TextDecoder().decode(r.value);
+          buf += txt;
+          txt.split('\n').forEach(function(l) {
+            if (l.trim()) cfgLog('← ' + l.trim(), (l.indexOf('CFG') >= 0 || l.indexOf('saved') >= 0) ? 'ok' : 'dim');
+          });
+          if (buf.indexOf('CFG saved') >= 0 || buf.indexOf('Rebooting') >= 0) break;
+        }
       } catch(_) { break; }
     }
+
+    writer.releaseLock();
+    try { reader.cancel(); }    catch(_) {}
+    try { reader.releaseLock();} catch(_) {}
     try { await port.close(); } catch(_) {}
+
+    if (buf.indexOf('CFG saved') >= 0 || buf.indexOf('Rebooting') >= 0) {
+      setSCStatus('✓ Config saved — device rebooting!', 'ok');
+      cfgLog('✓ Confirmed! Device rebooting with new settings.', 'ok');
+      setTimeout(function() { goToDone(cfg); }, 1200);
+    } else {
+      setSCStatus('No confirmation received — try again.', 'error');
+      cfgLog('No confirmation. Device may already be running — press EN/RST then try again.', 'warn');
+      btn.disabled = false;
+    }
+
   } catch(e) {
-    if (e.name !== 'NotFoundError') successMonitorLog('// Error: ' + e.message + '\n');
-    document.getElementById('btn-success-monitor').disabled = false;
+    if (e.name === 'NotFoundError') setSCStatus('No port selected — try again.', 'warn');
+    else setSCStatus('Error: ' + e.message, 'error');
+    cfgLog('Error: ' + e.message, 'error');
+    if (port) { try { await port.close(); } catch(_) {} }
+    btn.disabled = false;
   }
 }
 
-async function successMonitorDisconnect() {
-  successMonitorActive = false;
-  if (successMonitorReader) {
-    try { await successMonitorReader.cancel(); } catch(_) {}
-    try { successMonitorReader.releaseLock(); } catch(_) {}
-    successMonitorReader = null;
-  }
-  document.getElementById('success-monitor-badge').className = 'badge badge-idle';
-  document.getElementById('success-monitor-badge').textContent = 'Disconnected';
-  document.getElementById('btn-success-monitor').disabled = false;
-  document.getElementById('btn-success-monitor-stop').disabled = true;
-  successMonitorLog('\n// Disconnected.\n');
+// ─────────────────────────────────────
+//  DONE SCREEN
+// ─────────────────────────────────────
+function goToDone(cfg) {
+  document.getElementById('done-ssid').textContent  = cfg.ssid;
+  document.getElementById('done-host').textContent  = cfg.taHost + ':' + cfg.taPort;
+  document.getElementById('done-lname').textContent = cfg.lName;
+  document.getElementById('done-led').textContent   = cfg.ledType === 'rgb' ? '4-Pin RGB' : '2-Pin (Red + Green)';
+  goTo(4);
 }
 
-
-var monitorPort   = null;
-var monitorReader = null;
-var monitorActive = false;
-
-function monitorLog(text) {
-  var t = document.getElementById('monitor-terminal');
-  t.textContent += text;
+// ─────────────────────────────────────
+//  SERIAL MONITOR (screen 4 only)
+// ─────────────────────────────────────
+function monLog(txt) {
+  var t = document.getElementById('mon-terminal');
+  t.textContent += txt;
   t.scrollTop = t.scrollHeight;
 }
-
-function clearMonitor() {
-  document.getElementById('monitor-terminal').textContent = '';
+function monClear() {
+  document.getElementById('mon-terminal').textContent = '';
 }
 
-function setMonitorBadge(text, type) {
-  var b = document.getElementById('monitor-badge');
-  b.textContent = text;
-  b.className = 'badge badge-' + type;
-}
-
-async function monitorConnect() {
+async function monConnect() {
   try {
-    var baud = parseInt(document.getElementById('monitor-baud').value);
-    monitorPort = await navigator.serial.requestPort();
-    try { await monitorPort.close(); } catch(_) {}
-    await delay(200);
-    await monitorPort.open({ baudRate: baud });
-    monitorActive = true;
-    setMonitorBadge('Connected', 'ok');
-    document.getElementById('btn-monitor-connect').disabled = true;
-    document.getElementById('btn-monitor-disconnect').disabled = false;
-    document.getElementById('monitor-baud').disabled = true;
-    monitorLog('// Connected at ' + baud + ' baud — press EN/RST on your ESP32 to see output.\n\n');
-
-    monitorReader = monitorPort.readable.getReader();
-    var decoder = new TextDecoder();
-    while (monitorActive) {
+    document.getElementById('btn-mon-connect').disabled = true;
+    monPort = await navigator.serial.requestPort();
+    try { await monPort.close(); } catch(_) {}
+    await delay(300);
+    await monPort.open({ baudRate: 115200 });
+    monActive = true;
+    document.getElementById('mon-badge').className = 'badge badge-ok';
+    document.getElementById('mon-badge').textContent = 'Connected';
+    document.getElementById('btn-mon-disconnect').disabled = false;
+    monLog('// Connected — press EN/RST on your ESP32 to see boot messages.\n\n');
+    monReader = monPort.readable.getReader();
+    var dec = new TextDecoder();
+    while (monActive) {
       try {
-        var result = await monitorReader.read();
-        if (result.done || !monitorActive) break;
-        if (result.value) monitorLog(decoder.decode(result.value));
+        var r = await monReader.read();
+        if (r.done || !monActive) break;
+        if (r.value) monLog(dec.decode(r.value));
       } catch(_) { break; }
     }
+    try { await monPort.close(); } catch(_) {}
   } catch(e) {
-    if (e.name !== 'NotFoundError') monitorLog('// Error: ' + e.message + '\n');
-    await monitorDisconnect();
+    if (e.name !== 'NotFoundError') monLog('// Error: ' + e.message + '\n');
+    document.getElementById('btn-mon-connect').disabled = false;
   }
 }
 
-async function monitorDisconnect() {
-  monitorActive = false;
-  if (monitorReader) {
-    try { await monitorReader.cancel(); } catch(_) {}
-    try { monitorReader.releaseLock(); } catch(_) {}
-    monitorReader = null;
-  }
-  if (monitorPort) {
-    try { await monitorPort.close(); } catch(_) {}
-    monitorPort = null;
-  }
-  setMonitorBadge('Disconnected', 'idle');
-  document.getElementById('btn-monitor-connect').disabled = false;
-  document.getElementById('btn-monitor-disconnect').disabled = true;
-  document.getElementById('monitor-baud').disabled = false;
-  monitorLog('\n// Disconnected.\n');
+async function monDisconnect() {
+  monActive = false;
+  if (monReader) { try { await monReader.cancel(); } catch(_){} try { monReader.releaseLock(); } catch(_){} monReader = null; }
+  if (monPort)   { try { await monPort.close(); }   catch(_){} monPort = null; }
+  document.getElementById('mon-badge').className  = 'badge badge-idle';
+  document.getElementById('mon-badge').textContent = 'Disconnected';
+  document.getElementById('btn-mon-connect').disabled    = false;
+  document.getElementById('btn-mon-disconnect').disabled = true;
+  monLog('\n// Disconnected.\n');
+}
+
+// ─────────────────────────────────────
+//  START OVER
+// ─────────────────────────────────────
+function startOver() {
+  monDisconnect();
+  // Reset flash screen
+  document.getElementById('flash-log').innerHTML = '<span class="log-dim">// Ready — click the button above to flash your ESP32.</span><br>';
+  document.getElementById('progress-wrap').classList.remove('show');
+  setFlashBadge('Ready', 'idle');
+  document.getElementById('btn-flash').disabled = false;
+  // Reset config screen
+  document.getElementById('cfg-log').innerHTML = '<span class="log-dim">// Click the button above to send your settings.</span><br>';
+  document.getElementById('sc-status').textContent = '';
+  document.getElementById('btn-sendcfg').disabled = false;
+  // Reset monitor
+  document.getElementById('mon-terminal').textContent = '// Connect to see live device output.\n';
+  serialPort = null;
+  savedCfg   = null;
+  goTo(1);
 }
 </script>
 </body>
