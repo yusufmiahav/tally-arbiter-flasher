@@ -1179,47 +1179,20 @@ async function startFlash() {
 async function writeNVSSettings(cfg) {
   var cfgPort = null;
   try {
-    log('Firmware written. Waiting for device to reboot...', 'info');
-    await delay(3000);
-
-    // esptool-js keeps an internal lock on serialPort that persists
-    // even after transport.disconnect(). We must request a fresh port.
-    log('Select the serial port again to send config...', 'warn');
-    setBadge('port-badge', 'Select port for config...', 'warn');
-
+    // No delay — device is already waiting for CFG packet.
+    // Request port immediately as part of this fresh user gesture.
+    log('Select the serial port to send config...', 'warn');
     cfgPort = await navigator.serial.requestPort();
 
+    // Close in case it was left open from a previous attempt
     try { await cfgPort.close(); } catch(_) {}
-    await delay(400);
+    await delay(200);
     await cfgPort.open({ baudRate: 115200 });
-    log('Port open. Waiting for "Waiting for CFG"...', 'info');
+    log('Port open. Sending config immediately...', 'ok');
 
     var encoder = new TextEncoder();
     var writer  = cfgPort.writable.getWriter();
     var reader  = cfgPort.readable.getReader();
-
-    var buf = '';
-    var gotBoot = false;
-    var deadline = Date.now() + 12000;
-    while (Date.now() < deadline) {
-      try {
-        var rr = await Promise.race([
-          reader.read(),
-          delay(100).then(function() { return { value: null }; })
-        ]);
-        if (rr.value) {
-          var chunk = new TextDecoder().decode(rr.value);
-          buf += chunk;
-          chunk.split('\n').forEach(function(l) { if (l.trim()) log('← ' + l.trim(), 'dim'); });
-          if (buf.indexOf('Waiting for CFG') >= 0 || buf.indexOf('No WiFi') >= 0) {
-            gotBoot = true; break;
-          }
-        }
-      } catch(_) { break; }
-    }
-
-    if (gotBoot) log('Device ready — sending config...', 'ok');
-    else log('Sending config (boot message not seen — sending anyway)...', 'warn');
 
     var settings = {
       ssid: cfg.ssid, pass: cfg.pass,
@@ -1234,10 +1207,16 @@ async function writeNVSSettings(cfg) {
     };
 
     var cmd = 'CFG:' + JSON.stringify(settings) + '\n';
-    log('Sending: CFG:{ssid:"' + cfg.ssid + '", tahost:"' + cfg.taHost + '", ledtype:"' + cfg.ledType + '", ...}', 'info');
-    await writer.write(encoder.encode(cmd));
-    log('Config sent!', 'ok');
+    log('→ ssid:"' + cfg.ssid + '"  tahost:"' + cfg.taHost + ':' + cfg.taPort + '"', 'info');
 
+    // Send it twice with a short gap — device may still be in early boot
+    await writer.write(encoder.encode(cmd));
+    await delay(800);
+    await writer.write(encoder.encode(cmd));
+    log('Config sent (×2). Waiting for confirmation...', 'ok');
+
+    // Read back confirmation
+    var confBuf = '';
     var confDeadline = Date.now() + 6000;
     while (Date.now() < confDeadline) {
       try {
@@ -1247,28 +1226,38 @@ async function writeNVSSettings(cfg) {
         ]);
         if (cr.value) {
           var resp = new TextDecoder().decode(cr.value);
+          confBuf += resp;
           resp.split('\n').forEach(function(l) {
-            if (l.trim()) log('← ' + l.trim(), l.indexOf('saved') >= 0 ? 'ok' : 'dim');
+            if (l.trim()) log('← ' + l.trim(), l.toLowerCase().indexOf('saved') >= 0 ? 'ok' : 'dim');
           });
-          if (resp.indexOf('saved') >= 0 || resp.indexOf('Rebooting') >= 0) break;
+          if (confBuf.indexOf('saved') >= 0 || confBuf.indexOf('Rebooting') >= 0) break;
         }
       } catch(_) { break; }
     }
 
     writer.releaseLock();
     try { reader.cancel(); } catch(_) {}
-    reader.releaseLock();
+    try { reader.releaseLock(); } catch(_) {}
     try { await cfgPort.close(); } catch(_) {}
-    log('Settings saved! Device rebooting with new config.', 'ok');
+
+    if (confBuf.indexOf('saved') >= 0 || confBuf.indexOf('Rebooting') >= 0) {
+      log('✓ Config confirmed! Device rebooting.', 'ok');
+      var sendBtn = document.getElementById('btn-send-config');
+      if (sendBtn) { sendBtn.textContent = '✓ Config Sent — Device Rebooting'; sendBtn.style.borderColor = 'var(--green)'; sendBtn.style.color = 'var(--green)'; }
+    } else {
+      log('No confirmation received. If the device reboots with wrong settings, press EN/RST and click Send Config again.', 'warn');
+    }
 
   } catch(e) {
     if (e.name === 'NotFoundError') {
-      log('Port selection skipped — use "Update Config Only" to send settings.', 'warn');
+      log('Port not selected — click "Send Config to Device" again.', 'warn');
     } else {
-      log('Settings write error: ' + e.message, 'warn');
-      log('Use "Update Config Only" to send settings manually.', 'warn');
+      log('Config error: ' + e.message, 'error');
     }
     if (cfgPort) { try { await cfgPort.close(); } catch(_) {} }
+    // Re-enable the send button so user can retry
+    var sendBtn = document.getElementById('btn-send-config');
+    if (sendBtn) { sendBtn.disabled = false; sendBtn.textContent = '▶ Send Config to Device'; }
   }
 }
 
@@ -1384,7 +1373,6 @@ async function sendConfigAfterFlash() {
   btn.disabled = true;
   btn.textContent = 'Sending...';
   await writeNVSSettings(pendingCfg);
-  btn.textContent = '✓ Config Sent';
 }
 
 function resetFlasher() {
