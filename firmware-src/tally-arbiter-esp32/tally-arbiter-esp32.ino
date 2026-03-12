@@ -4,22 +4,17 @@
 #include <ArduinoJson.h>
 #include <Preferences.h>
 #include <WebServer.h>
-#include <esp_flash.h>
 #include "soc/soc.h"
 #include "soc/rtc_cntl_reg.h"
 
-/* ── Default config (overridden by web flasher or web UI) ── */
+/* ── Default config ── */
 #define RED_PIN    23
 #define GREEN_PIN  22
 #define BLUE_PIN   21
 
-bool CUT_BUS    = true;
-bool USE_RGB    = false;
-bool RGB_ANODE  = true;
-
-// Config blob written by web flasher to this address at flash time
-#define CONFIG_FLASH_ADDR 0x3D000
-#define CONFIG_MAGIC      0xCF6700FF
+bool CUT_BUS   = true;
+bool USE_RGB   = false;
+bool RGB_ANODE = true;
 
 // These defaults are used only if no saved preferences exist
 // The web flasher writes real values via CFG: serial packet on first boot
@@ -477,67 +472,13 @@ void handleSave() {
   ESP.restart();
 }
 
-/* ── Flash config reader ── */
-bool applyFlashConfig() {
-  uint8_t buf[2048] = {0};
-
-  // Use esp_flash_read with NULL = default flash chip
-  esp_err_t err = esp_flash_read(NULL, buf, CONFIG_FLASH_ADDR, sizeof(buf));
-  if (err != ESP_OK) return false;
-
-  uint32_t magic;
-  memcpy(&magic, buf, 4);
-  if (magic != CONFIG_MAGIC) return false;
-
-  String json = String((char*)(buf + 4));
-  if (json.length() < 5) return false;
-
-  StaticJsonDocument<1024> cfg;
-  if (deserializeJson(cfg, json) != DeserializationError::Ok) return false;
-
-  Serial.println("Found flash config: " + json);
-
-  preferences.begin("tally-arbiter", false);
-  preferences.clear();
-  if (cfg.containsKey("ssid"))     preferences.putString("ssid",      cfg["ssid"].as<String>());
-  if (cfg.containsKey("pass"))     preferences.putString("pass",      cfg["pass"].as<String>());
-  if (cfg.containsKey("tahost"))   preferences.putString("tahost",    cfg["tahost"].as<String>());
-  if (cfg.containsKey("taport"))   preferences.putInt   ("taport",    cfg["taport"].as<int>());
-  if (cfg.containsKey("lname"))    preferences.putString("lname",     cfg["lname"].as<String>());
-  if (cfg.containsKey("devid"))    preferences.putString("deviceid",  cfg["devid"].as<String>());
-  if (cfg.containsKey("cutbus"))   preferences.putBool  ("cutbus",    cfg["cutbus"].as<int>() == 1);
-  if (cfg.containsKey("pinr"))     preferences.putInt   ("pinr",      cfg["pinr"].as<int>());
-  if (cfg.containsKey("ping"))     preferences.putInt   ("ping",      cfg["ping"].as<int>());
-  if (cfg.containsKey("ledtype"))  preferences.putString("ledtype",   cfg["ledtype"].as<String>());
-  if (cfg.containsKey("pinrgbr"))  preferences.putInt   ("pinrgbr",   cfg["pinrgbr"].as<int>());
-  if (cfg.containsKey("pinrgbg"))  preferences.putInt   ("pinrgbg",   cfg["pinrgbg"].as<int>());
-  if (cfg.containsKey("pinrgbb"))  preferences.putInt   ("pinrgbb",   cfg["pinrgbb"].as<int>());
-  if (cfg.containsKey("rgbanode")) preferences.putBool  ("rgbanode",  cfg["rgbanode"].as<int>() == 1);
-  if (cfg.containsKey("static"))   preferences.putBool  ("static",    cfg["static"].as<int>() == 1);
-  if (cfg.containsKey("sip"))      preferences.putString("sip",       cfg["sip"].as<String>());
-  if (cfg.containsKey("sgw"))      preferences.putString("sgw",       cfg["sgw"].as<String>());
-  if (cfg.containsKey("ssn"))      preferences.putString("ssn",       cfg["ssn"].as<String>());
-  preferences.end();
-
-  // Erase the sector so config doesn't re-apply on next boot
-  esp_flash_erase_region(NULL, CONFIG_FLASH_ADDR, 4096);
-  Serial.println("Flash config applied. Rebooting...");
-  delay(300);
-  ESP.restart();
-  return true;
-}
-
 /* ── Setup & Loop ── */
 void setup() {
   // Disable brownout detector — prevents reboot loop on weak USB power
   WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
 
   Serial.begin(115200);
-  delay(500); // extra delay to ensure serial is ready before applyFlashConfig prints
-
-  // Check if web flasher wrote a config blob to flash — apply it first if so
-  // (this reboots the device, so code below only runs on clean boots)
-  applyFlashConfig();
+  delay(200);
 
   // Generate unique name from chip ID
   uint64_t chipid = ESP.getEfuseMac();
