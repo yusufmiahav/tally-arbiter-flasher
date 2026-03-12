@@ -10,8 +10,11 @@
 /* ── Default config (overridden by web flasher or web UI) ── */
 #define RED_PIN    23
 #define GREEN_PIN  22
+#define BLUE_PIN   21
 
-bool CUT_BUS = true;
+bool CUT_BUS    = true;
+bool USE_RGB    = false;   // false = 2 separate LEDs, true = RGB LED
+bool RGB_ANODE  = true;    // true = common anode (logic inverted)
 
 // These defaults are used only if no saved preferences exist
 // The web flasher writes real values via CFG: serial packet on first boot
@@ -46,6 +49,7 @@ bool socketPaused     = false; // paused while user edits settings in web UI
 
 int pinRed   = RED_PIN;
 int pinGreen = GREEN_PIN;
+int pinBlue  = BLUE_PIN;
 
 /* ── Log ring buffer ── */
 #define LOG_LINES 30
@@ -60,8 +64,24 @@ void addLog(const String& line) {
 
 /* ── LED helpers ── */
 void setLEDs(bool red, bool green) {
-  digitalWrite(pinRed,   red   ? HIGH : LOW);
-  digitalWrite(pinGreen, green ? HIGH : LOW);
+  if (USE_RGB) {
+    // RGB LED — blue unused for tally, just drive R and G
+    // Common anode: HIGH = off, LOW = on (inverted)
+    // Common cathode: HIGH = on, LOW = off (normal)
+    if (RGB_ANODE) {
+      digitalWrite(pinRed,   red   ? LOW  : HIGH);
+      digitalWrite(pinGreen, green ? LOW  : HIGH);
+      digitalWrite(pinBlue,  HIGH); // blue always off
+    } else {
+      digitalWrite(pinRed,   red   ? HIGH : LOW);
+      digitalWrite(pinGreen, green ? HIGH : LOW);
+      digitalWrite(pinBlue,  LOW);
+    }
+  } else {
+    // Standard 2-pin separate LEDs
+    digitalWrite(pinRed,   red   ? HIGH : LOW);
+    digitalWrite(pinGreen, green ? HIGH : LOW);
+  }
 }
 
 void evaluateMode() {
@@ -115,9 +135,14 @@ void checkSerialConfig() {
   if (cfg.containsKey("lname"))  preferences.putString("lname",  cfg["lname"].as<String>());
   if (cfg.containsKey("devid"))  preferences.putString("deviceid", cfg["devid"].as<String>());
   if (cfg.containsKey("cutbus")) preferences.putBool  ("cutbus", cfg["cutbus"].as<int>() == 1);
-  if (cfg.containsKey("pinr"))   preferences.putInt   ("pinr",   cfg["pinr"].as<int>());
-  if (cfg.containsKey("ping"))   preferences.putInt   ("ping",   cfg["ping"].as<int>());
-  if (cfg.containsKey("static")) preferences.putBool  ("static", cfg["static"].as<int>() == 1);
+  if (cfg.containsKey("pinr"))     preferences.putInt   ("pinr",     cfg["pinr"].as<int>());
+  if (cfg.containsKey("ping"))     preferences.putInt   ("ping",     cfg["ping"].as<int>());
+  if (cfg.containsKey("ledtype"))  preferences.putString("ledtype",  cfg["ledtype"].as<String>());
+  if (cfg.containsKey("pinrgbr"))  preferences.putInt   ("pinrgbr",  cfg["pinrgbr"].as<int>());
+  if (cfg.containsKey("pinrgbg"))  preferences.putInt   ("pinrgbg",  cfg["pinrgbg"].as<int>());
+  if (cfg.containsKey("pinrgbb"))  preferences.putInt   ("pinrgbb",  cfg["pinrgbb"].as<int>());
+  if (cfg.containsKey("rgbanode")) preferences.putBool  ("rgbanode", cfg["rgbanode"].as<int>() == 1);
+  if (cfg.containsKey("static"))   preferences.putBool  ("static",   cfg["static"].as<int>() == 1);
   if (cfg.containsKey("sip"))    preferences.putString("sip",    cfg["sip"].as<String>());
   if (cfg.containsKey("sgw"))    preferences.putString("sgw",    cfg["sgw"].as<String>());
   if (cfg.containsKey("ssn"))    preferences.putString("ssn",    cfg["ssn"].as<String>());
@@ -473,6 +498,11 @@ void setup() {
   int    pr  = preferences.getInt   ("pinr",      RED_PIN);
   int    pg  = preferences.getInt   ("ping",      GREEN_PIN);
   bool   cb  = preferences.getBool  ("cutbus",    true);
+  String lt  = preferences.getString("ledtype",   "2pin");
+  int    prr = preferences.getInt   ("pinrgbr",   RED_PIN);
+  int    prg = preferences.getInt   ("pinrgbg",   GREEN_PIN);
+  int    prb = preferences.getInt   ("pinrgbb",   BLUE_PIN);
+  bool   ra  = preferences.getBool  ("rgbanode",  true);
   String sip = preferences.getString("sip",       "192.168.1.100");
   String sgw = preferences.getString("sgw",       "192.168.1.1");
   String ssn = preferences.getString("ssn",       "255.255.255.0");
@@ -489,12 +519,16 @@ void setup() {
   pinRed     = pr;
   pinGreen   = pg;
   CUT_BUS    = cb;
+  USE_RGB    = (lt == "rgb");
+  RGB_ANODE  = ra;
+  if (USE_RGB) { pinRed = prr; pinGreen = prg; pinBlue = prb; }
   clientIp.fromString(sip);
   gateway.fromString(sgw);
   subnet.fromString(ssn);
 
   pinMode(pinRed,   OUTPUT);
   pinMode(pinGreen, OUTPUT);
+  if (USE_RGB) pinMode(pinBlue, OUTPUT);
   setLEDs(true, true); delay(200); setLEDs(false, false);
 
   setCpuFrequencyMhz(80);
