@@ -799,40 +799,29 @@ h1 {
     <!-- Success screen -->
     <div id="success-screen">
       <div class="success-icon">✓</div>
-      <div class="success-title">Flash Complete</div>
-      <div class="success-sub">Your ESP32 has been programmed successfully.</div>
-      <div style="font-family:var(--mono);font-size:0.65rem;color:var(--muted);line-height:2;margin-bottom:1.5rem;">
-        The device will reboot and connect to <span id="done-ssid" style="color:var(--text)"></span><br>
-        then register with Tally Arbiter at <span id="done-host" style="color:var(--text)"></span><br>
-        Watch the LEDs — Green blink = connecting, Solid = ready.
+      <div class="success-title">Firmware Written</div>
+      <div class="success-sub">One more step — send your settings to the device.</div>
+      <div style="font-family:var(--mono);font-size:0.65rem;color:var(--muted);line-height:2;margin-bottom:1.25rem;">
+        WiFi: <span id="done-ssid" style="color:var(--text)"></span> &nbsp;|&nbsp;
+        TA: <span id="done-host" style="color:var(--text)"></span>
       </div>
 
-      <!-- Live serial monitor on success screen -->
+      <button class="btn btn-primary" id="btn-send-config" onclick="sendConfigAfterFlash()" style="width:100%;margin-bottom:0.5rem;font-size:1rem;padding:0.9rem;letter-spacing:0.1em;">
+        ▶ Send Config to Device
+      </button>
+      <div class="hint" style="margin-bottom:1.5rem;text-align:center;">
+        The device is waiting. Click above, select the serial port when prompted, and your settings will be written automatically. Do <strong>not</strong> press EN/RST.
+      </div>
+
+      <!-- Live serial monitor -->
       <div style="text-align:left;margin-bottom:1.5rem;">
         <div style="font-family:var(--mono);font-size:0.6rem;color:var(--red);letter-spacing:0.2em;margin-bottom:0.5rem;">// LIVE DEVICE OUTPUT</div>
         <div style="display:flex;gap:0.5rem;margin-bottom:0.5rem;align-items:center;">
-          <button class="btn btn-ghost" id="btn-success-monitor" onclick="successMonitorConnect()" style="flex:1;font-size:0.7rem;padding:0.4rem;">
-            ⬡ Connect to see boot log
-          </button>
-          <button class="btn btn-ghost" id="btn-success-monitor-stop" onclick="successMonitorDisconnect()" disabled style="border-color:#e05;color:#e05;font-size:0.7rem;padding:0.4rem;">
-            ✕
-          </button>
+          <button class="btn btn-ghost" id="btn-success-monitor" onclick="successMonitorConnect()" style="flex:1;font-size:0.7rem;padding:0.4rem;">⬡ Connect to see boot log</button>
+          <button class="btn btn-ghost" id="btn-success-monitor-stop" onclick="successMonitorDisconnect()" disabled style="border-color:#e05;color:#e05;font-size:0.7rem;padding:0.4rem;">✕</button>
           <span id="success-monitor-badge" class="badge badge-idle">Disconnected</span>
         </div>
-        <div id="success-monitor-terminal" style="
-          background:var(--bg);
-          border:1px solid var(--border);
-          border-radius:4px;
-          padding:0.6rem;
-          font-family:var(--mono);
-          font-size:0.62rem;
-          color:#aaa;
-          height:180px;
-          overflow-y:auto;
-          white-space:pre-wrap;
-          word-break:break-all;
-          line-height:1.6;
-        "><span style="color:var(--muted)">// Connect to see device boot messages and WiFi status.</span>
+        <div id="success-monitor-terminal" style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0.6rem;font-family:var(--mono);font-size:0.62rem;color:#aaa;height:180px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;line-height:1.6;"><span style="color:var(--muted)">// Connect to see device boot messages.</span>
 </div>
       </div>
 
@@ -1154,14 +1143,13 @@ async function startFlash() {
     });
 
     setProgress(96, 'Resetting device...');
-    log('Flashing complete. Writing settings...', 'ok');
+    log('Flashing complete!', 'ok');
     try { await espLoader.softReset(); } catch(_) {}
     try { await transport.disconnect(); } catch(_) {}
-
-    await writeNVSSettings(cfg);
+    serialPort = null; // release port fully
 
     setProgress(100, 'Done!');
-    log('All done! Device is rebooting.', 'ok');
+    log('Firmware written. Now click "Send Config to Device" to write your settings.', 'ok');
     showSuccess(cfg);
 
   } catch(err) {
@@ -1377,12 +1365,26 @@ async function sendConfigOnly() {
 // ══════════════════════════════════════════════
 //  Success / Reset
 // ══════════════════════════════════════════════
+var pendingCfg = null; // stores config after flash for sendConfigAfterFlash
+
 function showSuccess(cfg) {
+  pendingCfg = cfg; // save for Send Config button
   document.querySelectorAll('.card').forEach(function(c) { c.style.display = 'none'; });
   document.getElementById('success-screen').classList.add('show');
   document.getElementById('done-ssid').textContent = cfg.ssid;
   document.getElementById('done-host').textContent = cfg.taHost + ':' + cfg.taPort;
   setStep(4);
+}
+
+// Called from the Send Config button on the success screen
+// Fresh user gesture means requestPort() will work
+async function sendConfigAfterFlash() {
+  if (!pendingCfg) return;
+  var btn = document.getElementById('btn-send-config');
+  btn.disabled = true;
+  btn.textContent = 'Sending...';
+  await writeNVSSettings(pendingCfg);
+  btn.textContent = '✓ Config Sent';
 }
 
 function resetFlasher() {
@@ -1398,6 +1400,9 @@ function resetFlasher() {
   setBadge('port-badge', 'Not connected', 'idle');
   document.getElementById('progress-wrap').classList.remove('show');
   document.getElementById('terminal').innerHTML = '<span class="log-dim">// Ready for next flash.</span><br>';
+  pendingCfg = null;
+  var sendBtn = document.getElementById('btn-send-config');
+  if (sendBtn) { sendBtn.disabled = false; sendBtn.textContent = '▶ Send Config to Device'; }
   serialPort = null;
   setStep(1);
 }
@@ -1542,10 +1547,10 @@ async function startCleanFlash() {
     log('Flash complete.', 'ok');
     try { await espLoader.softReset(); } catch(_) {}
     try { await transport.disconnect(); } catch(_) {}
+    serialPort = null; // release port fully
 
-    await writeNVSSettings(cfg);
     setProgress(100, 'Done!');
-    log('All done! Device rebooting fresh.', 'ok');
+    log('Firmware written. Now click "Send Config to Device" to write your settings.', 'ok');
     showSuccess(cfg);
 
   } catch(e) {
