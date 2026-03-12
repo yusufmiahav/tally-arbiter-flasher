@@ -6,6 +6,7 @@
 #include <WebServer.h>
 #include "soc/soc.h"
 #include "soc/rtc_cntl_reg.h"
+#include "esp_mac.h"
 
 /* ── Default config ── */
 #define RED_PIN    23
@@ -538,8 +539,16 @@ void setup() {
   addLog("WiFi: " + networkSSID);
   addLog("TA: " + tallyarbiter_host + ":" + String(tallyarbiter_port));
   addLog("Device: " + DeviceId);
+  // Format full MAC address
+  uint8_t mac[6];
+  esp_read_mac(mac, ESP_MAC_WIFI_STA);
+  char macStr[18];
+  snprintf(macStr, sizeof(macStr), "%02X:%02X:%02X:%02X:%02X:%02X",
+           mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+
   Serial.println("=== Tally Arbiter ESP32 ===");
   Serial.println("Listener : " + listenerDeviceName);
+  Serial.println("MAC Addr : " + String(macStr));
   Serial.println("WiFi SSID: " + networkSSID);
   Serial.println("TA Host  : " + tallyarbiter_host);
   Serial.println("TA Port  : " + String(tallyarbiter_port));
