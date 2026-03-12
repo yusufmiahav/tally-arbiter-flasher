@@ -722,7 +722,18 @@ h1 {
           ⟳ Update Config Only (no reflash)
         </button>
       </div>
-      <div class="hint" style="margin-top:0.5rem;">Use <strong>Update Config Only</strong> to change WiFi or TA settings on an already-flashed device — no BOOT button needed, just plug in and connect normally.</div>
+      <div class="btn-row" style="margin-top:0.5rem;gap:0.5rem;">
+        <button class="btn btn-ghost" id="btn-erase" onclick="eraseOnly()" disabled style="flex:1;border-color:#ff9800;color:#ff9800;">
+          ⚠ Erase Flash Only
+        </button>
+        <button class="btn btn-ghost" id="btn-clean-flash" onclick="startCleanFlash()" disabled style="flex:1;border-color:#e040fb;color:#e040fb;">
+          ☠ Erase + Flash Fresh
+        </button>
+      </div>
+      <div class="hint" style="margin-top:0.5rem;">
+        <strong>Erase Flash Only</strong> — wipes everything including corrupted NVS. Use when device is stuck in a reboot loop.<br>
+        <strong>Erase + Flash Fresh</strong> — full chip erase then reflash. Fixes crashes and writes new config in one go.
+      </div>
 
       <!-- Progress -->
       <div class="progress-wrap" id="progress-wrap">
@@ -913,6 +924,8 @@ async function connectSerial() {
     setBadge('port-badge', 'Port selected', 'ok');
     document.getElementById('btn-flash').disabled = false;
     document.getElementById('btn-cfg-only').disabled = false;
+    document.getElementById('btn-erase').disabled = false;
+    document.getElementById('btn-clean-flash').disabled = false;
     btn.textContent = 'Change Port';
     btn.disabled = false;
     setStep(2);
@@ -1038,6 +1051,8 @@ async function startFlash() {
     document.getElementById('btn-connect').textContent = 'Connect Device';
     document.getElementById('btn-flash').disabled = true;
     document.getElementById('btn-cfg-only').disabled = true;
+    document.getElementById('btn-erase').disabled = true;
+    document.getElementById('btn-clean-flash').disabled = true;
     setStep(2);
   } finally {
     isFlashing = false;
@@ -1226,6 +1241,8 @@ function resetFlasher() {
   document.getElementById('success-screen').classList.remove('show');
   document.getElementById('btn-flash').disabled = true;
   document.getElementById('btn-cfg-only').disabled = true;
+  document.getElementById('btn-erase').disabled = true;
+  document.getElementById('btn-clean-flash').disabled = true;
   var btnConnect = document.getElementById('btn-connect');
   btnConnect.disabled = false;
   btnConnect.textContent = 'Connect Device';
@@ -1234,6 +1251,169 @@ function resetFlasher() {
   document.getElementById('terminal').innerHTML = '<span class="log-dim">// Ready for next flash.</span><br>';
   serialPort = null;
   setStep(1);
+}
+
+// ══════════════════════════════════════════════
+//  Shared: connect esptool, run callback, disconnect
+// ══════════════════════════════════════════════
+async function withESPLoader(callback) {
+  var ESPLoader = window._ESPLoader;
+  var Transport = window._Transport;
+  if (!ESPLoader || !Transport) throw new Error('esptool-js not loaded — refresh and try again');
+
+  var transport = new Transport(serialPort, true);
+  var espLoader = new ESPLoader({
+    transport: transport,
+    baudrate: 115200,
+    terminal: {
+      clean: function() {},
+      writeLine: function(s) { log(s, 'dim'); },
+      write:     function(s) { log(s, 'dim'); }
+    }
+  });
+
+  await espLoader.main();
+  log('Chip: ' + espLoader.chip.CHIP_NAME, 'ok');
+  await callback(espLoader);
+  try { await espLoader.softReset(); } catch(_) {}
+  try { await transport.disconnect(); } catch(_) {}
+}
+
+// ══════════════════════════════════════════════
+//  Erase Flash Only
+// ══════════════════════════════════════════════
+async function eraseOnly() {
+  if (isFlashing) return;
+  isFlashing = true;
+  setAllBtnsDisabled(true);
+  log('─── Erase Flash Only ───', 'heading');
+  log('Hold BOOT + tap EN/RST if this hangs...', 'warn');
+  setProgress(10, 'Connecting...');
+
+  try {
+    await withESPLoader(async function(esp) {
+      setProgress(30, 'Erasing entire flash — this takes ~10 seconds...');
+      log('Erasing flash...', 'warn');
+      await esp.eraseFlash();
+      setProgress(100, 'Erase complete!');
+      log('Flash erased. Device is blank — reflash firmware before use.', 'ok');
+      setBadge('port-badge', 'Erased', 'ok');
+    });
+  } catch(e) {
+    log('Erase error: ' + e.message, 'error');
+    setBadge('port-badge', 'Error', 'error');
+  } finally {
+    isFlashing = false;
+    setAllBtnsDisabled(false);
+  }
+}
+
+// ══════════════════════════════════════════════
+//  Erase + Flash Fresh (full clean flash)
+// ══════════════════════════════════════════════
+async function startCleanFlash() {
+  if (isFlashing) return;
+  var cfg = getConfig();
+  if (cfg.errors.length > 0) { cfg.errors.forEach(function(e) { log('x ' + e, 'error'); }); return; }
+
+  isFlashing = true;
+  setAllBtnsDisabled(true);
+  setStep(3);
+  log('─── Erase + Clean Flash ───', 'heading');
+  log('SSID: ' + cfg.ssid, 'info');
+  log('TA Server: ' + cfg.taHost + ':' + cfg.taPort, 'info');
+
+  try {
+    setProgress(5, 'Fetching firmware...');
+    var base = window.location.href.replace(/\/[^/]*$/, '/');
+    var fwRes = await fetch(base + 'firmware/tally-arbiter-esp32.ino.bin');
+    if (!fwRes.ok) throw new Error('Firmware fetch failed: ' + fwRes.status);
+    var fwBuf = await fwRes.arrayBuffer();
+    log('Firmware: ' + (fwBuf.byteLength / 1024).toFixed(1) + ' KB', 'ok');
+
+    var blRes = await fetch(base + 'firmware/tally-arbiter-esp32.ino.bootloader.bin');
+    var ptRes = await fetch(base + 'firmware/tally-arbiter-esp32.ino.partitions.bin');
+    if (!blRes.ok) throw new Error('Bootloader fetch failed');
+    if (!ptRes.ok) throw new Error('Partitions fetch failed');
+    var blBuf = await blRes.arrayBuffer();
+    var ptBuf = await ptRes.arrayBuffer();
+
+    setProgress(10, 'Connecting...');
+    log('Hold BOOT + tap EN/RST if this hangs...', 'warn');
+
+    var ESPLoader = window._ESPLoader;
+    var Transport = window._Transport;
+    if (!ESPLoader || !Transport) throw new Error('esptool-js not loaded — refresh and try again');
+
+    var transport = new Transport(serialPort, true);
+    var espLoader = new ESPLoader({
+      transport: transport,
+      baudrate: 115200,
+      terminal: {
+        clean: function() {},
+        writeLine: function(s) { log(s, 'dim'); },
+        write:     function(s) { log(s, 'dim'); }
+      }
+    });
+
+    await espLoader.main();
+    log('Chip: ' + espLoader.chip.CHIP_NAME, 'ok');
+
+    setProgress(20, 'Erasing entire flash...');
+    log('Erasing flash — this takes ~10 seconds...', 'warn');
+    await espLoader.eraseFlash();
+    log('Flash erased.', 'ok');
+
+    setProgress(30, 'Changing baud rate...');
+    await espLoader.changeBaud(921600);
+
+    var flashFiles = [
+      { name: 'bootloader', data: blBuf, address: 0x1000  },
+      { name: 'partitions', data: ptBuf, address: 0x8000  },
+      { name: 'firmware',   data: fwBuf, address: 0x10000 }
+    ];
+
+    log('Writing ' + flashFiles.length + ' file(s) to flash...', 'info');
+    await espLoader.writeFlash({
+      fileArray: flashFiles.map(function(f) {
+        return { data: espLoader.ui8ToBstr(new Uint8Array(f.data)), address: f.address };
+      }),
+      flashSize: 'keep', flashMode: 'keep', flashFreq: 'keep',
+      eraseAll: false, compress: true,
+      reportProgress: function(fi, written, total) {
+        var pct = 30 + (written / total) * 60;
+        setProgress(pct, 'Writing ' + flashFiles[fi].name + '... ' +
+          Math.round(written/1024) + '/' + Math.round(total/1024) + ' KB');
+      }
+    });
+
+    setProgress(92, 'Resetting...');
+    log('Flash complete.', 'ok');
+    try { await espLoader.softReset(); } catch(_) {}
+    try { await transport.disconnect(); } catch(_) {}
+
+    await writeNVSSettings(cfg);
+    setProgress(100, 'Done!');
+    log('All done! Device rebooting fresh.', 'ok');
+    showSuccess(cfg);
+
+  } catch(e) {
+    log('Clean flash error: ' + e.message, 'error');
+    setBadge('port-badge', 'Failed', 'error');
+    serialPort = null;
+    setAllBtnsDisabled(false);
+    document.getElementById('btn-connect').disabled = false;
+    document.getElementById('btn-connect').textContent = 'Connect Device';
+    setStep(2);
+  } finally {
+    isFlashing = false;
+  }
+}
+
+function setAllBtnsDisabled(disabled) {
+  ['btn-flash','btn-cfg-only','btn-erase','btn-clean-flash','btn-connect'].forEach(function(id) {
+    document.getElementById(id).disabled = disabled;
+  });
 }
 
 // ══════════════════════════════════════════════
