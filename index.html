@@ -764,6 +764,36 @@ h1 {
         then register with Tally Arbiter at <span id="done-host" style="color:var(--text)"></span><br>
         Watch the LEDs — Green blink = connecting, Solid = ready.
       </div>
+
+      <!-- Live serial monitor on success screen -->
+      <div style="text-align:left;margin-bottom:1.5rem;">
+        <div style="font-family:var(--mono);font-size:0.6rem;color:var(--red);letter-spacing:0.2em;margin-bottom:0.5rem;">// LIVE DEVICE OUTPUT</div>
+        <div style="display:flex;gap:0.5rem;margin-bottom:0.5rem;align-items:center;">
+          <button class="btn btn-ghost" id="btn-success-monitor" onclick="successMonitorConnect()" style="flex:1;font-size:0.7rem;padding:0.4rem;">
+            ⬡ Connect to see boot log
+          </button>
+          <button class="btn btn-ghost" id="btn-success-monitor-stop" onclick="successMonitorDisconnect()" disabled style="border-color:#e05;color:#e05;font-size:0.7rem;padding:0.4rem;">
+            ✕
+          </button>
+          <span id="success-monitor-badge" class="badge badge-idle">Disconnected</span>
+        </div>
+        <div id="success-monitor-terminal" style="
+          background:var(--bg);
+          border:1px solid var(--border);
+          border-radius:4px;
+          padding:0.6rem;
+          font-family:var(--mono);
+          font-size:0.62rem;
+          color:#aaa;
+          height:180px;
+          overflow-y:auto;
+          white-space:pre-wrap;
+          word-break:break-all;
+          line-height:1.6;
+        "><span style="color:var(--muted)">// Connect to see device boot messages and WiFi status.</span>
+</div>
+      </div>
+
       <button class="btn btn-ghost" onclick="resetFlasher()">⟳ Flash Another Device</button>
     </div>
 
@@ -1097,33 +1127,39 @@ async function startFlash() {
 
 // ══════════════════════════════════════════════
 //  Write NVS Settings via Serial after flash
+//  Reuses the same serialPort — no second picker
 // ══════════════════════════════════════════════
 async function writeNVSSettings(cfg) {
-  var cfgPort = null;
   try {
-    log('Waiting for device to boot...', 'info');
+    log('Waiting for device to reboot...', 'info');
     await delay(4000);
-    log('Please select the serial port again to write settings...', 'warn');
-    cfgPort = await navigator.serial.requestPort();
-    try { await cfgPort.close(); } catch(_) {}
-    await delay(300);
-    await cfgPort.open({ baudRate: 115200 });
-    log('Serial open. Waiting for boot message...', 'info');
+
+    // Close port in case esptool left it open
+    try { await serialPort.close(); } catch(_) {}
+    await delay(500);
+
+    log('Opening serial to send config...', 'info');
+    await serialPort.open({ baudRate: 115200 });
 
     var encoder = new TextEncoder();
-    var writer  = cfgPort.writable.getWriter();
-    var reader  = cfgPort.readable.getReader();
+    var writer  = serialPort.writable.getWriter();
+    var reader  = serialPort.readable.getReader();
+
+    // Wait for "Waiting for CFG" or "Booting"
     var buf = '';
     var gotBoot = false;
-    var deadline = Date.now() + 8000;
-
+    var deadline = Date.now() + 10000;
     while (Date.now() < deadline) {
       try {
-        var rr = await Promise.race([reader.read(), delay(100).then(function() { return { value: null }; })]);
+        var rr = await Promise.race([
+          reader.read(),
+          delay(100).then(function() { return { value: null }; })
+        ]);
         if (rr.value) {
           var chunk = new TextDecoder().decode(rr.value);
           buf += chunk;
-          if (buf.indexOf('Waiting for CFG') >= 0 || buf.indexOf('Booting') >= 0 || buf.indexOf('No WiFi') >= 0) {
+          chunk.split('\n').forEach(function(l) { if (l.trim()) log('← ' + l.trim(), 'dim'); });
+          if (buf.indexOf('Waiting for CFG') >= 0 || buf.indexOf('No WiFi') >= 0 || buf.indexOf('Booting') >= 0) {
             gotBoot = true; break;
           }
         }
@@ -1131,11 +1167,13 @@ async function writeNVSSettings(cfg) {
     }
 
     if (gotBoot) log('Device ready — sending config...', 'ok');
-    else log('Sending config anyway...', 'warn');
+    else log('Sending config (no boot message seen)...', 'warn');
 
     var settings = {
-      ssid: cfg.ssid, pass: cfg.pass, tahost: cfg.taHost, taport: cfg.taPort,
-      lname: cfg.lName, devid: cfg.devId, cutbus: cfg.cutBus ? 1 : 0,
+      ssid: cfg.ssid, pass: cfg.pass,
+      tahost: cfg.taHost, taport: cfg.taPort,
+      lname: cfg.lName, devid: cfg.devId,
+      cutbus: cfg.cutBus ? 1 : 0,
       pinr: cfg.pinRed, ping: cfg.pinGreen,
       'static': cfg.useStatic ? 1 : 0,
       sip: cfg.staticIp, sgw: cfg.staticGw, ssn: cfg.staticSn
@@ -1145,15 +1183,18 @@ async function writeNVSSettings(cfg) {
     await writer.write(encoder.encode(cmd));
     log('Config sent!', 'ok');
 
-    var confDeadline = Date.now() + 4000;
+    // Wait for confirmation
+    var confDeadline = Date.now() + 5000;
     while (Date.now() < confDeadline) {
       try {
-        var cr = await Promise.race([reader.read(), delay(100).then(function() { return { value: null }; })]);
+        var cr = await Promise.race([
+          reader.read(),
+          delay(100).then(function() { return { value: null }; })
+        ]);
         if (cr.value) {
           var resp = new TextDecoder().decode(cr.value);
-          if (resp.indexOf('saved') >= 0 || resp.indexOf('Rebooting') >= 0) {
-            log('Device confirmed: ' + resp.trim(), 'ok'); break;
-          }
+          resp.split('\n').forEach(function(l) { if (l.trim()) log('← ' + l.trim(), l.indexOf('saved') >= 0 ? 'ok' : 'dim'); });
+          if (resp.indexOf('saved') >= 0 || resp.indexOf('Rebooting') >= 0) break;
         }
       } catch(_) { break; }
     }
@@ -1161,13 +1202,13 @@ async function writeNVSSettings(cfg) {
     writer.releaseLock();
     try { reader.cancel(); } catch(_) {}
     reader.releaseLock();
-    await cfgPort.close();
+    try { await serialPort.close(); } catch(_) {}
+
     log('Settings saved! Device rebooting.', 'ok');
 
   } catch(e) {
-    if (e.name !== 'NotFoundError') log('Settings write error: ' + e.message, 'warn');
-    else log('Port selection skipped.', 'warn');
-    if (cfgPort) { try { await cfgPort.close(); } catch(_) {} }
+    log('Settings write error: ' + e.message, 'warn');
+    log('Use Update Config Only button to send settings manually.', 'warn');
   }
 }
 
@@ -1453,8 +1494,68 @@ function setAllBtnsDisabled(disabled) {
 }
 
 // ══════════════════════════════════════════════
-//  Serial Monitor
+//  Success screen serial monitor
 // ══════════════════════════════════════════════
+var successMonitorReader = null;
+var successMonitorActive = false;
+
+function successMonitorLog(text) {
+  var t = document.getElementById('success-monitor-terminal');
+  t.textContent += text;
+  t.scrollTop = t.scrollHeight;
+}
+
+async function successMonitorConnect() {
+  try {
+    document.getElementById('btn-success-monitor').disabled = true;
+
+    // Try to reuse serialPort if still available, otherwise ask
+    var port = serialPort;
+    if (!port) {
+      port = await navigator.serial.requestPort();
+    }
+
+    try { await port.close(); } catch(_) {}
+    await delay(300);
+    await port.open({ baudRate: 115200 });
+
+    successMonitorActive = true;
+    document.getElementById('success-monitor-badge').className = 'badge badge-ok';
+    document.getElementById('success-monitor-badge').textContent = 'Connected';
+    document.getElementById('btn-success-monitor-stop').disabled = false;
+    successMonitorLog('// Connected — press EN/RST or power cycle to see boot messages.\n\n');
+
+    successMonitorReader = port.readable.getReader();
+    var decoder = new TextDecoder();
+    while (successMonitorActive) {
+      try {
+        var result = await successMonitorReader.read();
+        if (result.done || !successMonitorActive) break;
+        if (result.value) successMonitorLog(decoder.decode(result.value));
+      } catch(_) { break; }
+    }
+    try { await port.close(); } catch(_) {}
+  } catch(e) {
+    if (e.name !== 'NotFoundError') successMonitorLog('// Error: ' + e.message + '\n');
+    document.getElementById('btn-success-monitor').disabled = false;
+  }
+}
+
+async function successMonitorDisconnect() {
+  successMonitorActive = false;
+  if (successMonitorReader) {
+    try { await successMonitorReader.cancel(); } catch(_) {}
+    try { successMonitorReader.releaseLock(); } catch(_) {}
+    successMonitorReader = null;
+  }
+  document.getElementById('success-monitor-badge').className = 'badge badge-idle';
+  document.getElementById('success-monitor-badge').textContent = 'Disconnected';
+  document.getElementById('btn-success-monitor').disabled = false;
+  document.getElementById('btn-success-monitor-stop').disabled = true;
+  successMonitorLog('\n// Disconnected.\n');
+}
+
+
 var monitorPort   = null;
 var monitorReader = null;
 var monitorActive = false;
