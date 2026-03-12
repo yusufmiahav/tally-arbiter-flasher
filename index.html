@@ -1127,28 +1127,41 @@ async function startFlash() {
 
 // ══════════════════════════════════════════════
 //  Write NVS Settings via Serial after flash
-//  Reuses the same serialPort — no second picker
 // ══════════════════════════════════════════════
 async function writeNVSSettings(cfg) {
   try {
     log('Waiting for device to reboot...', 'info');
-    await delay(4000);
+    await delay(5000); // give esptool time to fully release the port
 
-    // Close port in case esptool left it open
-    try { await serialPort.close(); } catch(_) {}
-    await delay(500);
+    // Try multiple times to open — port may take a moment to release
+    var opened = false;
+    for (var attempt = 0; attempt < 5; attempt++) {
+      try {
+        try { await serialPort.close(); } catch(_) {}
+        await delay(600);
+        await serialPort.open({ baudRate: 115200 });
+        opened = true;
+        break;
+      } catch(e) {
+        log('Port open attempt ' + (attempt+1) + ' failed, retrying...', 'dim');
+        await delay(800);
+      }
+    }
 
-    log('Opening serial to send config...', 'info');
-    await serialPort.open({ baudRate: 115200 });
+    if (!opened) {
+      log('Could not reopen port — use Update Config Only to send settings.', 'warn');
+      return;
+    }
+
+    log('Serial open. Waiting for boot message...', 'info');
 
     var encoder = new TextEncoder();
     var writer  = serialPort.writable.getWriter();
     var reader  = serialPort.readable.getReader();
 
-    // Wait for "Waiting for CFG" or "Booting"
     var buf = '';
     var gotBoot = false;
-    var deadline = Date.now() + 10000;
+    var deadline = Date.now() + 12000;
     while (Date.now() < deadline) {
       try {
         var rr = await Promise.race([
@@ -1159,7 +1172,7 @@ async function writeNVSSettings(cfg) {
           var chunk = new TextDecoder().decode(rr.value);
           buf += chunk;
           chunk.split('\n').forEach(function(l) { if (l.trim()) log('← ' + l.trim(), 'dim'); });
-          if (buf.indexOf('Waiting for CFG') >= 0 || buf.indexOf('No WiFi') >= 0 || buf.indexOf('Booting') >= 0) {
+          if (buf.indexOf('Waiting for CFG') >= 0 || buf.indexOf('No WiFi') >= 0) {
             gotBoot = true; break;
           }
         }
@@ -1167,7 +1180,7 @@ async function writeNVSSettings(cfg) {
     }
 
     if (gotBoot) log('Device ready — sending config...', 'ok');
-    else log('Sending config (no boot message seen)...', 'warn');
+    else log('Sending config (boot message not seen)...', 'warn');
 
     var settings = {
       ssid: cfg.ssid, pass: cfg.pass,
@@ -1180,11 +1193,11 @@ async function writeNVSSettings(cfg) {
     };
 
     var cmd = 'CFG:' + JSON.stringify(settings) + '\n';
+    log('Sending: CFG:{ssid:"' + cfg.ssid + '", tahost:"' + cfg.taHost + '", ...}', 'info');
     await writer.write(encoder.encode(cmd));
     log('Config sent!', 'ok');
 
-    // Wait for confirmation
-    var confDeadline = Date.now() + 5000;
+    var confDeadline = Date.now() + 6000;
     while (Date.now() < confDeadline) {
       try {
         var cr = await Promise.race([
@@ -1193,7 +1206,9 @@ async function writeNVSSettings(cfg) {
         ]);
         if (cr.value) {
           var resp = new TextDecoder().decode(cr.value);
-          resp.split('\n').forEach(function(l) { if (l.trim()) log('← ' + l.trim(), l.indexOf('saved') >= 0 ? 'ok' : 'dim'); });
+          resp.split('\n').forEach(function(l) {
+            if (l.trim()) log('← ' + l.trim(), l.indexOf('saved') >= 0 ? 'ok' : 'dim');
+          });
           if (resp.indexOf('saved') >= 0 || resp.indexOf('Rebooting') >= 0) break;
         }
       } catch(_) { break; }
@@ -1203,12 +1218,11 @@ async function writeNVSSettings(cfg) {
     try { reader.cancel(); } catch(_) {}
     reader.releaseLock();
     try { await serialPort.close(); } catch(_) {}
-
-    log('Settings saved! Device rebooting.', 'ok');
+    log('Settings saved! Device rebooting with new config.', 'ok');
 
   } catch(e) {
     log('Settings write error: ' + e.message, 'warn');
-    log('Use Update Config Only button to send settings manually.', 'warn');
+    log('Use "Update Config Only" button to send settings manually.', 'warn');
   }
 }
 
