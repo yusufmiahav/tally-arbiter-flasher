@@ -181,7 +181,7 @@ h1{font-family:var(--mono);font-size:clamp(1.4rem,4vw,2rem);letter-spacing:.18em
       <h1>Tally Arbiter</h1>
       <div class="tally-indicator"><div class="dot g"></div><div class="dot r"></div></div>
     </div>
-    <div class="tagline">ESP32 Web Flasher &mdash; v1.0</div>
+    <div class="tagline">ESP Web Flasher &mdash; v1.1</div>
   </header>
 
   <div class="steps">
@@ -194,13 +194,31 @@ h1{font-family:var(--mono);font-size:clamp(1.4rem,4vw,2rem);letter-spacing:.18em
     <div class="step"><div class="step-num">4</div><div class="step-label">Done</div></div>
   </div>
 
+  <!-- Board selector -->
+  <div class="card lit">
+    <div class="card-label">// 00 &mdash; Board Type</div>
+    <div style="display:flex;gap:.75rem;margin-top:.25rem">
+      <button class="btn btn-ghost" id="btn-board-esp32"  onclick="setBoard('esp32')"
+        style="flex:1;padding:.6rem;font-size:.78rem;border-color:var(--red);color:var(--red)">
+        ● ESP32
+      </button>
+      <button class="btn btn-ghost" id="btn-board-esp8266" onclick="setBoard('esp8266')"
+        style="flex:1;padding:.6rem;font-size:.78rem">
+        ◉ ESP8266 / D1 Mini
+      </button>
+    </div>
+    <div class="hint" id="board-hint" style="margin-top:.6rem">
+      ESP32 DevKit — 30/38 pin board. Use BOOT + EN/RST to enter flash mode if needed.
+    </div>
+  </div>
+
   <!-- WiFi -->
   <div class="card lit">
     <div class="card-label">// 01 &mdash; WiFi Network</div>
     <div class="field">
       <label>WiFi SSID</label>
       <input type="text" id="wifi-ssid" placeholder="YourNetworkName" autocomplete="off" spellcheck="false">
-      <div class="hint">2.4 GHz only — ESP32 does not support 5 GHz.</div>
+      <div class="hint">2.4 GHz only — ESP devices do not support 5 GHz.</div>
     </div>
     <div class="field">
       <label>WiFi Password</label>
@@ -261,7 +279,7 @@ h1{font-family:var(--mono);font-size:clamp(1.4rem,4vw,2rem);letter-spacing:.18em
         <div class="field"><label>Red Pin — Program</label><input type="number" id="pin-red" value="23"></div>
         <div class="field"><label>Green Pin — Preview</label><input type="number" id="pin-green" value="22"></div>
       </div>
-      <div class="hint">Two separate LEDs, each with a 220Ω resistor.</div>
+      <div class="hint" id="pin-2pin-hint">Two separate LEDs, each with a 220Ω resistor to GND.</div>
     </div>
     <div id="pins-rgb" style="display:none">
       <div class="row2">
@@ -409,8 +427,8 @@ h1{font-family:var(--mono);font-size:clamp(1.4rem,4vw,2rem);letter-spacing:.18em
     <div class="alert alert-info" style="margin-bottom:1.5rem">
       <span class="alert-icon">①</span>
       <div>
-        Firmware is written. The device is now waiting for your settings.<br>
-        <strong>Do not press EN/RST or unplug the device.</strong> Click the button below to send your WiFi and Tally Arbiter config over serial.
+        Config is being sent automatically as the device boots.<br>
+        If confirmation doesn't appear within a few seconds, click <strong>Send Config</strong> below — you may need to press <strong>EN/RST</strong> on the device first.
       </div>
     </div>
 
@@ -582,7 +600,7 @@ window.addEventListener('DOMContentLoaded', function() {
     document.querySelectorAll('.screen').forEach(function(s){ s.style.display='none'; });
     return;
   }
-  document.getElementById('listener-name').placeholder = 'esp32-tally-' + Math.floor(Math.random()*9000+1000);
+  setBoard('esp32'); // sets placeholder, pin defaults, hint
   loadHostHistory();
 });
 
@@ -686,19 +704,58 @@ function saveHostHistory() {
   } catch(_){}
 }
 
+var selectedBoard = 'esp32'; // 'esp32' or 'esp8266'
+
+function setBoard(b) {
+  selectedBoard = b;
+  var is32  = b === 'esp32';
+  var btn32  = document.getElementById('btn-board-esp32');
+  var btn86  = document.getElementById('btn-board-esp8266');
+  btn32.style.borderColor  = is32  ? 'var(--red)' : 'var(--border2)';
+  btn32.style.color        = is32  ? 'var(--red)' : 'var(--muted)';
+  btn86.style.borderColor  = !is32 ? 'var(--red)' : 'var(--border2)';
+  btn86.style.color        = !is32 ? 'var(--red)' : 'var(--muted)';
+
+  document.getElementById('board-hint').textContent = is32
+    ? 'ESP32 DevKit — 30/38 pin board. Use BOOT + EN/RST to enter flash mode if needed.'
+    : 'ESP8266 / D1 Mini / NodeMCU. Pins: D0=Red, D2=Green, D1=Blue. 3.3V=Common Anode.';
+
+  // Update pin defaults
+  if (is32) {
+    document.getElementById('pin-red').value   = 23;
+    document.getElementById('pin-green').value = 22;
+    document.getElementById('pin-rgb-r').value = 23;
+    document.getElementById('pin-rgb-g').value = 22;
+    document.getElementById('pin-rgb-b').value = 21;
+    document.getElementById('pin-2pin-hint').textContent = 'Two separate LEDs, each with a 220Ω resistor to GND.';
+  } else {
+    document.getElementById('pin-red').value   = 16; // D0
+    document.getElementById('pin-green').value = 4;  // D2
+    document.getElementById('pin-rgb-r').value = 16; // D0
+    document.getElementById('pin-rgb-g').value = 4;  // D2
+    document.getElementById('pin-rgb-b').value = 5;  // D1
+    document.getElementById('pin-2pin-hint').textContent = 'D0 (GPIO16) = Red, D2 (GPIO4) = Green. 220Ω resistor each.';
+  }
+
+  // Update listener name placeholder
+  document.getElementById('listener-name').placeholder =
+    (is32 ? 'esp32' : 'esp8266') + '-tally-' + Math.floor(Math.random()*9000+1000);
+}
+
 function getConfig() {
   var ssid      = document.getElementById('wifi-ssid').value.trim();
   var pass      = document.getElementById('wifi-pass').value;
   var taHost    = document.getElementById('ta-host').value.trim();
   var taPort    = parseInt(document.getElementById('ta-port').value) || 4455;
-  var lName     = document.getElementById('listener-name').value.trim() || ('esp32-' + Date.now().toString(16).slice(-6));
+  var lName     = document.getElementById('listener-name').value.trim() ||
+                  (selectedBoard + '-' + Date.now().toString(16).slice(-6));
   var cutBus    = document.getElementById('cut-bus').checked;
   var ledType   = document.getElementById('pins-rgb').style.display === 'none' ? '2pin' : 'rgb';
-  var pinRed    = parseInt(document.getElementById('pin-red').value)   || 23;
-  var pinGreen  = parseInt(document.getElementById('pin-green').value) || 22;
-  var pinRgbR   = parseInt(document.getElementById('pin-rgb-r').value) || 23;
-  var pinRgbG   = parseInt(document.getElementById('pin-rgb-g').value) || 22;
-  var pinRgbB   = parseInt(document.getElementById('pin-rgb-b').value) || 21;
+  var pinRed    = parseInt(document.getElementById('pin-red').value)   || (selectedBoard === 'esp8266' ? 16 : 23);
+  var pinGreen  = parseInt(document.getElementById('pin-green').value) || (selectedBoard === 'esp8266' ? 4  : 22);
+  var pinRgbR   = parseInt(document.getElementById('pin-rgb-r').value) || (selectedBoard === 'esp8266' ? 16 : 23);
+  var pinRgbG   = parseInt(document.getElementById('pin-rgb-g').value) || (selectedBoard === 'esp8266' ? 4  : 22);
+  var pinRgbB   = parseInt(document.getElementById('pin-rgb-b').value) || (selectedBoard === 'esp8266' ? 5  : 21);
   var rgbAnode  = document.getElementById('rgb-common-anode').checked;
   var useStatic = document.getElementById('use-static').checked;
   var staticIp  = document.getElementById('static-ip').value.trim()  || '192.168.1.100';
@@ -707,23 +764,39 @@ function getConfig() {
   var errors = [];
   if (!ssid)   errors.push('WiFi SSID is required.');
   if (!taHost) errors.push('Tally Arbiter Server IP is required.');
-  return { ssid, pass, taHost, taPort, lName, devId:'unassigned', cutBus,
+  return { board: selectedBoard,
+           ssid, pass, taHost, taPort, lName, devId:'unassigned', cutBus,
            ledType, pinRed, pinGreen, pinRgbR, pinRgbG, pinRgbB, rgbAnode,
            useStatic, staticIp, staticGw, staticSn, errors };
 }
 
 function buildCFGPacket(cfg) {
-  return 'CFG:' + JSON.stringify({
+  var obj = {
     ssid: cfg.ssid, pass: cfg.pass,
     tahost: cfg.taHost, taport: cfg.taPort,
     lname: cfg.lName, devid: cfg.devId,
     cutbus: cfg.cutBus ? 1 : 0,
-    pinr: cfg.pinRed, ping: cfg.pinGreen,
-    ledtype: cfg.ledType, pinrgbr: cfg.pinRgbR, pinrgbg: cfg.pinRgbG, pinrgbb: cfg.pinRgbB,
+    ledtype: cfg.ledType,
     rgbanode: cfg.rgbAnode ? 1 : 0,
     'static': cfg.useStatic ? 1 : 0,
     sip: cfg.staticIp, sgw: cfg.staticGw, ssn: cfg.staticSn
-  }) + '\n';
+  };
+  if (cfg.board === 'esp8266') {
+    // ESP8266 uses pinb (not pinrgbb) and GPIO numbers D0/D1/D2
+    obj.pinr    = cfg.pinRed;
+    obj.ping    = cfg.pinGreen;
+    obj.pinb    = cfg.pinRgbB;
+    obj.pinrgbr = cfg.pinRgbR;
+    obj.pinrgbg = cfg.pinRgbG;
+    obj.pinrgbb = cfg.pinRgbB;
+  } else {
+    obj.pinr    = cfg.pinRed;
+    obj.ping    = cfg.pinGreen;
+    obj.pinrgbr = cfg.pinRgbR;
+    obj.pinrgbg = cfg.pinRgbG;
+    obj.pinrgbb = cfg.pinRgbB;
+  }
+  return 'CFG:' + JSON.stringify(obj) + '\n';
 }
 
 // ─────────────────────────────────────
@@ -731,25 +804,36 @@ function buildCFGPacket(cfg) {
 // ─────────────────────────────────────
 async function fetchFirmware() {
   var base = window.location.href.replace(/\/[^/]*$/, '/');
-  flashLog('Fetching firmware...', 'info');
-  var [fwRes, blRes, ptRes] = await Promise.all([
-    fetch(base + 'firmware/tally-arbiter-esp32.ino.bin'),
-    fetch(base + 'firmware/tally-arbiter-esp32.ino.bootloader.bin'),
-    fetch(base + 'firmware/tally-arbiter-esp32.ino.partitions.bin')
-  ]);
-  if (!fwRes.ok) throw new Error('Firmware not found (' + fwRes.status + ')');
-  if (!blRes.ok) throw new Error('Bootloader not found');
-  if (!ptRes.ok) throw new Error('Partitions not found');
-  var [fwBuf, blBuf, ptBuf] = await Promise.all([fwRes.arrayBuffer(), blRes.arrayBuffer(), ptRes.arrayBuffer()]);
-  flashLog('Firmware ' + (fwBuf.byteLength/1024).toFixed(1) + ' KB loaded.', 'ok');
-  return { fwBuf, blBuf, ptBuf };
+  var board = selectedBoard;
+  flashLog('Fetching ' + board.toUpperCase() + ' firmware...', 'info');
+
+  if (board === 'esp8266') {
+    var fwRes = await fetch(base + 'firmware/tally-arbiter-esp8266.ino.bin');
+    if (!fwRes.ok) throw new Error('ESP8266 firmware not found (' + fwRes.status + ') — check CI build');
+    var fwBuf = await fwRes.arrayBuffer();
+    flashLog('Firmware ' + (fwBuf.byteLength/1024).toFixed(1) + ' KB loaded.', 'ok');
+    return { board: 'esp8266', fwBuf };
+  } else {
+    var [fwRes, blRes, ptRes] = await Promise.all([
+      fetch(base + 'firmware/tally-arbiter-esp32.ino.bin'),
+      fetch(base + 'firmware/tally-arbiter-esp32.ino.bootloader.bin'),
+      fetch(base + 'firmware/tally-arbiter-esp32.ino.partitions.bin')
+    ]);
+    if (!fwRes.ok) throw new Error('Firmware not found (' + fwRes.status + ')');
+    if (!blRes.ok) throw new Error('Bootloader not found');
+    if (!ptRes.ok) throw new Error('Partitions not found');
+    var [fwBuf, blBuf, ptBuf] = await Promise.all([fwRes.arrayBuffer(), blRes.arrayBuffer(), ptRes.arrayBuffer()]);
+    flashLog('Firmware ' + (fwBuf.byteLength/1024).toFixed(1) + ' KB loaded.', 'ok');
+    return { board: 'esp32', fwBuf, blBuf, ptBuf };
+  }
 }
 
 async function connectESP() {
   var ESPLoader = window._ESPLoader;
   var Transport = window._Transport;
   if (!ESPLoader || !Transport) throw new Error('esptool-js not loaded — please refresh');
-  flashLog('Select the ESP32 serial port...', 'warn');
+  var boardLabel = selectedBoard === 'esp8266' ? 'ESP8266' : 'ESP32';
+  flashLog('Select the ' + boardLabel + ' serial port...', 'warn');
   serialPort = await navigator.serial.requestPort();
   setFlashBadge('Port selected', 'ok');
   var transport = new Transport(serialPort, true);
@@ -765,13 +849,22 @@ async function connectESP() {
   return { esp, transport };
 }
 
-async function writeFiles(esp, fwBuf, blBuf, ptBuf, progressOffset) {
+async function writeFiles(esp, fw, progressOffset) {
   progressOffset = progressOffset || 20;
-  var files = [
-    { name:'bootloader', data:blBuf, address:0x1000  },
-    { name:'partitions', data:ptBuf, address:0x8000  },
-    { name:'firmware',   data:fwBuf, address:0x10000 }
-  ];
+  var files;
+  if (fw.board === 'esp8266') {
+    // ESP8266: single binary at 0x0
+    files = [
+      { name:'firmware', data:fw.fwBuf, address:0x0 }
+    ];
+  } else {
+    // ESP32: bootloader + partitions + firmware
+    files = [
+      { name:'bootloader', data:fw.blBuf, address:0x1000  },
+      { name:'partitions', data:fw.ptBuf, address:0x8000  },
+      { name:'firmware',   data:fw.fwBuf, address:0x10000 }
+    ];
+  }
   setProgress(progressOffset, 'Changing baud rate...');
   await esp.changeBaud(921600);
   flashLog('Writing firmware to flash...', 'info');
@@ -805,20 +898,32 @@ async function startFlash() {
     var fw = await fetchFirmware();
 
     var conn = await connectESP();
-    await writeFiles(conn.esp, fw.fwBuf, fw.blBuf, fw.ptBuf, 20);
+    await writeFiles(conn.esp, fw, 20);
 
-    setProgress(97, 'Resetting...');
-    flashLog('Flash complete!', 'ok');
+    setProgress(97, 'Sending config...');
+    flashLog('Flash complete! Sending config before reset...', 'ok');
+
+    // Drop back to 115200 so the ESP32 UART can read it on boot
+    try { await conn.esp.changeBaud(115200); } catch(_) {}
+    // Write CFG packet directly through esptool's transport while we still own the port
+    var cfgCmd = new TextEncoder().encode(buildCFGPacket(cfg));
+    try {
+      await conn.transport.write(cfgCmd);
+      flashLog('Config packet written to device buffer.', 'ok');
+      await delay(200);
+    } catch(e) {
+      flashLog('Config pre-write failed (' + e.message + ') — will send after reboot.', 'warn');
+    }
+
     try { await conn.esp.softReset(); } catch(_) {}
-    var portForConfig = serialPort; // stash before transport.disconnect releases it
     try { await conn.transport.disconnect(); } catch(_) {}
     serialPort = null;
     setProgress(100, 'Done!');
     setFlashBadge('Flashed ✓', 'ok');
-    flashLog('Device rebooting — sending config automatically in 2s...', 'ok');
+    flashLog('Device rebooting — config sent, moving to confirmation...', 'ok');
 
     await delay(800);
-    populateSendConfig(cfg, portForConfig);
+    populateSendConfig(cfg, null); // no port needed — packet already in buffer
     goTo(3);
 
   } catch(e) {
@@ -890,20 +995,30 @@ async function startCleanFlash() {
     await conn.esp.eraseFlash();
     flashLog('Erased.', 'ok');
 
-    await writeFiles(conn.esp, fw.fwBuf, fw.blBuf, fw.ptBuf, 35);
+    await writeFiles(conn.esp, fw, 35);
 
-    setProgress(97, 'Resetting...');
-    flashLog('Flash complete!', 'ok');
+    setProgress(97, 'Sending config...');
+    flashLog('Flash complete! Sending config before reset...', 'ok');
+
+    try { await conn.esp.changeBaud(115200); } catch(_) {}
+    var cfgCmd = new TextEncoder().encode(buildCFGPacket(cfg));
+    try {
+      await conn.transport.write(cfgCmd);
+      flashLog('Config packet written to device buffer.', 'ok');
+      await delay(200);
+    } catch(e) {
+      flashLog('Config pre-write failed (' + e.message + ') — will send after reboot.', 'warn');
+    }
+
     try { await conn.esp.softReset(); } catch(_) {}
-    var portForConfig = serialPort;
     try { await conn.transport.disconnect(); } catch(_) {}
     serialPort = null;
     setProgress(100, 'Done!');
     setFlashBadge('Flashed ✓', 'ok');
-    flashLog('Device rebooting — sending config automatically in 2s...', 'ok');
+    flashLog('Device rebooting — config sent, moving to confirmation...', 'ok');
 
     await delay(800);
-    populateSendConfig(cfg, portForConfig);
+    populateSendConfig(cfg, null);
     goTo(3);
 
   } catch(e) {
@@ -936,13 +1051,95 @@ function populateSendConfig(cfg, port) {
   document.getElementById('sc-lname').textContent = cfg.lName;
   document.getElementById('sc-status').textContent = '';
   document.getElementById('btn-sendcfg').disabled = false;
-  document.getElementById('cfg-log').innerHTML = '<span class="log-dim">// Ready to send config.</span><br>';
+  document.getElementById('cfg-log').innerHTML = '<span class="log-dim">// Ready.</span><br>';
   savedPort = port || null;
-  // If we have a stashed port, auto-send after the device boots (~2s)
+
   if (savedPort) {
-    setSCStatus('Device rebooting — sending config in 2s...', 'warn');
+    // Fallback: stashed port, reopen and send
+    setSCStatus('Sending config over serial...', 'warn');
     document.getElementById('btn-sendcfg').disabled = true;
     setTimeout(function() { doSendConfig(); }, 2000);
+  } else {
+    // Primary path: CFG packet was written into device buffer before reset.
+    // Open port to receive the confirmation echo after the device boots and processes it.
+    setSCStatus('Waiting for device confirmation...', 'warn');
+    document.getElementById('btn-sendcfg').disabled = true;
+    setTimeout(function() { listenForConfirmation(cfg); }, 2500);
+  }
+}
+
+// ─────────────────────────────────────
+//  Listen for confirmation after pre-buffered CFG write
+//  Port is opened without user interaction — packet already sent
+// ─────────────────────────────────────
+async function listenForConfirmation(cfg) {
+  var btn = document.getElementById('btn-sendcfg');
+
+  // Get the port Chrome already knows about (was used for flash)
+  // navigator.serial.getPorts() returns previously granted ports — no dialog
+  var port = null;
+  try {
+    var ports = await navigator.serial.getPorts();
+    if (ports.length > 0) port = ports[ports.length - 1]; // most recently used
+  } catch(_) {}
+
+  if (!port) {
+    // Couldn't auto-get port — fall back to manual send
+    cfgLog('Could not auto-connect. Click "Send Config" to send manually.', 'warn');
+    setSCStatus('Click Send Config to continue.', 'warn');
+    btn.disabled = false;
+    return;
+  }
+
+  try {
+    // Open at 115200 — opening may trigger a DTR reset on some boards,
+    // so wait for boot then read confirmation
+    try { await port.close(); } catch(_) {}
+    await delay(200);
+    await port.open({ baudRate: 115200 });
+    cfgLog('Port open — reading device boot output...', 'ok');
+    setSCStatus('Reading confirmation...', 'warn');
+
+    var reader = port.readable.getReader();
+    var buf = '';
+    var deadline = Date.now() + 7000; // device boots in ~1.5s, processes CFG, reboots
+
+    while (Date.now() < deadline) {
+      try {
+        var r = await Promise.race([reader.read(), delay(100).then(function(){ return {value:null}; })]);
+        if (r.value) {
+          var txt = new TextDecoder().decode(r.value);
+          buf += txt;
+          txt.split('\n').forEach(function(l) {
+            if (l.trim()) cfgLog('← ' + l.trim(), (l.indexOf('CFG') >= 0 || l.indexOf('saved') >= 0) ? 'ok' : 'dim');
+          });
+          if (buf.indexOf('CFG saved') >= 0 || buf.indexOf('Rebooting') >= 0) break;
+        }
+      } catch(_) { break; }
+    }
+
+    try { reader.cancel(); } catch(_) {}
+    try { reader.releaseLock(); } catch(_) {}
+    try { await port.close(); } catch(_) {}
+
+    if (buf.indexOf('CFG saved') >= 0 || buf.indexOf('Rebooting') >= 0) {
+      setSCStatus('✓ Config confirmed — device rebooting!', 'ok');
+      cfgLog('✓ Config confirmed. Proceeding to done screen.', 'ok');
+      setTimeout(function() { goToDone(cfg); }, 1200);
+    } else {
+      // CFG may not have been buffered — fall back to active send
+      cfgLog('No confirmation in boot log. Sending config now...', 'warn');
+      setSCStatus('Sending config...', 'warn');
+      savedPort = port; // reuse for doSendConfig
+      try { await port.close(); } catch(_) {}
+      btn.disabled = true;
+      await doSendConfig();
+    }
+
+  } catch(e) {
+    cfgLog('Auto-confirm failed (' + e.message + '). Click Send Config to retry.', 'warn');
+    setSCStatus('Click Send Config to send manually.', 'warn');
+    btn.disabled = false;
   }
 }
 
