@@ -596,6 +596,7 @@ void setup() {
                  (USE_RGB ? (RGB_ANODE ? " Common-Anode" : " Common-Cathode") : ""));
   Serial.println("Config   : " + String(hadSavedConfig ? "Loaded from flash" : "Using defaults"));
   Serial.println("=============================");
+  Serial.println("CFG_READY"); // signal to web flasher that device is ready to receive config
 
   // Register WiFi event handlers
   static WiFiEventHandler h1, h2, h3;
