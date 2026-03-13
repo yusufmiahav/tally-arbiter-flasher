@@ -96,9 +96,25 @@ A browser-based flasher for ESP32 and ESP8266 tally listener devices, built for 
 
 ## Changing Settings After Flash
 
-**ESP32:** Use the Send Config step in the flasher (press EN/RST when prompted), or simply reflash with updated settings.
+### Finding the Device IP
 
-**ESP8266:** Browse to the device IP in a browser — the built-in web UI lets you update WiFi, TA server IP, listener name, LED pins, and static IP. Find the IP in the serial monitor on screen 3 of the flasher after the device boots. Reflashing with new settings on screen 1 will also override saved config automatically.
+The device IP is printed in the serial monitor on boot. You can access it from:
+
+- **Screen 3** (ESP8266) or **Screen 4** (ESP32) — connect the serial monitor in the flasher and press **EN/RST** to see the boot log. The IP appears as `WiFi OK: 192.168.x.x`
+- **Screen 5** — the standalone serial monitor, available from any screen via the ⬡ Serial Monitor button
+- **Your router's DHCP client list** — look for a device named `esp32-xxxxxx` or `esp8266-xxxxxx`
+
+### ESP32
+
+Once you have the IP, open `http://<device-ip>` in a browser to access the web UI — update WiFi, TA server IP, listener name, or device ID and click Save. The device will reboot with the new settings.
+
+Alternatively, reflash from the flasher with updated settings on screen 1 — the CFG packet is sent automatically after flashing.
+
+### ESP8266
+
+Once you have the IP, open `http://<device-ip>` in a browser to access the web UI — update any settings and save. The device reboots with the new settings.
+
+Reflashing from the flasher will also override saved settings automatically — the new WiFi and TA credentials are baked into the binary at flash time.
 
 To factory reset an ESP8266: browse to `http://<device-ip>/resetconfig`
 
