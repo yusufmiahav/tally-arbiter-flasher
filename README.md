@@ -100,8 +100,10 @@ A browser-based flasher for ESP32 and ESP8266 tally listener devices, built for 
 
 The device IP is printed in the serial monitor on boot. You can access it from:
 
-- **Screen 3** (ESP8266) or **Screen 4** (ESP32) — connect the serial monitor in the flasher and press **EN/RST** to see the boot log. The IP appears as `WiFi OK: 192.168.x.x`
-- **Screen 5** — the standalone serial monitor, available from any screen via the ⬡ Serial Monitor button
+- **Screen 1** — the ⬡ Serial Monitor button at the bottom of the settings page opens a serial monitor without leaving the config screen
+- **Screen 3** (ESP8266) — serial monitor is embedded directly on the post-flash instructions page
+- **Screen 4** (ESP32) — connect the serial monitor and press **EN/RST** to see the boot log. The IP appears as `WiFi OK: 192.168.x.x`
+- **Screen 5** — the standalone serial monitor, accessible from any screen via the ⬡ Serial Monitor button
 - **Your router's DHCP client list** — look for a device named `esp32-xxxxxx` or `esp8266-xxxxxx`
 
 ### ESP32
