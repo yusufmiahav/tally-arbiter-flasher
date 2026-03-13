@@ -1069,22 +1069,29 @@ function populateSendConfig(cfg, port) {
 }
 
 // ─────────────────────────────────────
-//  Listen for confirmation after pre-buffered CFG write
-//  Port is opened without user interaction — packet already sent
+//  Listen for confirmation after pre-buffered CFG write (ESP32 path)
+//  For ESP8266 this isn't used — doSendConfig handles it directly
 // ─────────────────────────────────────
 async function listenForConfirmation(cfg) {
   var btn = document.getElementById('btn-sendcfg');
 
-  // Get the port Chrome already knows about (was used for flash)
-  // navigator.serial.getPorts() returns previously granted ports — no dialog
+  if (cfg.board === 'esp8266') {
+    // ESP8266: opening port triggers DTR reset — so doSendConfig IS the flow.
+    // Re-enable button and let user click, or auto-trigger via doSendConfig directly.
+    cfgLog('ESP8266 detected — connect port to send config.', 'info');
+    setSCStatus('Click "Send Config" to send.', 'warn');
+    btn.disabled = false;
+    return;
+  }
+
+  // ESP32 path: try to get previously granted port without dialog
   var port = null;
   try {
     var ports = await navigator.serial.getPorts();
-    if (ports.length > 0) port = ports[ports.length - 1]; // most recently used
+    if (ports.length > 0) port = ports[ports.length - 1];
   } catch(_) {}
 
   if (!port) {
-    // Couldn't auto-get port — fall back to manual send
     cfgLog('Could not auto-connect. Click "Send Config" to send manually.', 'warn');
     setSCStatus('Click Send Config to continue.', 'warn');
     btn.disabled = false;
@@ -1092,8 +1099,6 @@ async function listenForConfirmation(cfg) {
   }
 
   try {
-    // Open at 115200 — opening may trigger a DTR reset on some boards,
-    // so wait for boot then read confirmation
     try { await port.close(); } catch(_) {}
     await delay(200);
     await port.open({ baudRate: 115200 });
@@ -1102,7 +1107,7 @@ async function listenForConfirmation(cfg) {
 
     var reader = port.readable.getReader();
     var buf = '';
-    var deadline = Date.now() + 7000; // device boots in ~1.5s, processes CFG, reboots
+    var deadline = Date.now() + 7000;
 
     while (Date.now() < deadline) {
       try {
@@ -1127,13 +1132,9 @@ async function listenForConfirmation(cfg) {
       cfgLog('✓ Config confirmed. Proceeding to done screen.', 'ok');
       setTimeout(function() { goToDone(cfg); }, 1200);
     } else {
-      // CFG may not have been buffered — fall back to active send
-      cfgLog('No confirmation in boot log. Sending config now...', 'warn');
-      setSCStatus('Sending config...', 'warn');
-      savedPort = port; // reuse for doSendConfig
-      try { await port.close(); } catch(_) {}
-      btn.disabled = true;
-      await doSendConfig();
+      cfgLog('No confirmation in boot log. Click Send Config to retry.', 'warn');
+      setSCStatus('Click Send Config to send manually.', 'warn');
+      btn.disabled = false;
     }
 
   } catch(e) {
@@ -1145,6 +1146,8 @@ async function listenForConfirmation(cfg) {
 
 // ─────────────────────────────────────
 //  DO SEND CONFIG
+//  ESP8266: opens port → DTR resets device → waits for CFG_READY → sends
+//  ESP32:   reuses stashed port or asks user → sends immediately
 // ─────────────────────────────────────
 async function doSendConfig() {
   var cfg = savedCfg || getConfig();
@@ -1153,46 +1156,72 @@ async function doSendConfig() {
   setSCStatus('Opening port...', 'warn');
 
   var port = null;
-  var portWasStashed = false;
 
   try {
     if (savedPort) {
-      // Reuse port from flash — no dialog needed
       port = savedPort;
       savedPort = null;
-      portWasStashed = true;
-      cfgLog('Reusing port from flash — no selection needed.', 'ok');
+      cfgLog('Reusing port from flash.', 'ok');
     } else {
-      // Manual mode (Send Config Only) — need user to pick port
-      cfgLog('Select the ESP32 serial port...', 'warn');
+      var boardLabel = (cfg.board === 'esp8266') ? 'ESP8266' : 'ESP32';
+      cfgLog('Select the ' + boardLabel + ' serial port...', 'warn');
       port = await navigator.serial.requestPort();
     }
 
-    // Ensure port is closed before we open it
     try { await port.close(); } catch(_) {}
     await delay(200);
     await port.open({ baudRate: 115200 });
-
-    cfgLog('Port open — sending config packet...', 'ok');
-    setSCStatus('Sending...', 'warn');
-
-    var cmd = buildCFGPacket(cfg);
-    cfgLog('ssid:"' + cfg.ssid + '"  tahost:"' + cfg.taHost + ':' + cfg.taPort + '"  bytes:' + (cmd.length - 5), 'info');
+    cfgLog('Port open.', 'ok');
 
     var encoder = new TextEncoder();
     var writer  = port.writable.getWriter();
     var reader  = port.readable.getReader();
+    var dec     = new TextDecoder();
+    var buf     = '';
 
+    if (cfg.board === 'esp8266') {
+      // Opening port triggered a DTR reset — device is now booting.
+      // Wait for CFG_READY beacon (up to 6s) then send immediately.
+      setSCStatus('Waiting for device to boot...', 'warn');
+      cfgLog('ESP8266 resetting — waiting for CFG_READY...', 'info');
+
+      var readyDeadline = Date.now() + 6000;
+      var ready = false;
+      while (Date.now() < readyDeadline) {
+        try {
+          var r = await Promise.race([reader.read(), delay(100).then(function(){ return {value:null}; })]);
+          if (r.value) {
+            var txt = dec.decode(r.value);
+            buf += txt;
+            txt.split('\n').forEach(function(l) { if (l.trim()) cfgLog('← ' + l.trim(), 'dim'); });
+            if (buf.indexOf('CFG_READY') >= 0) { ready = true; break; }
+          }
+        } catch(_) { break; }
+      }
+
+      if (!ready) {
+        // CFG_READY not seen — device may be on older firmware or running already
+        // Try sending anyway — checkSerialConfig runs in the main loop too
+        cfgLog('CFG_READY not seen — sending anyway...', 'warn');
+      } else {
+        cfgLog('Device ready — sending config...', 'ok');
+      }
+    }
+
+    // Send the config packet
+    setSCStatus('Sending...', 'warn');
+    var cmd = buildCFGPacket(cfg);
+    cfgLog('→ Sending config (' + (cmd.length - 5) + ' bytes)...', 'info');
     await writer.write(encoder.encode(cmd));
     cfgLog('Packet sent. Waiting for confirmation...', 'info');
 
-    var buf = '';
-    var deadline = Date.now() + 8000;
-    while (Date.now() < deadline) {
+    // Read confirmation (up to 8s)
+    var confirmDeadline = Date.now() + 8000;
+    while (Date.now() < confirmDeadline) {
       try {
         var r = await Promise.race([reader.read(), delay(100).then(function(){ return {value:null}; })]);
         if (r.value) {
-          var txt = new TextDecoder().decode(r.value);
+          var txt = dec.decode(r.value);
           buf += txt;
           txt.split('\n').forEach(function(l) {
             if (l.trim()) cfgLog('← ' + l.trim(), (l.indexOf('CFG') >= 0 || l.indexOf('saved') >= 0) ? 'ok' : 'dim');
@@ -1203,9 +1232,9 @@ async function doSendConfig() {
     }
 
     writer.releaseLock();
-    try { reader.cancel(); }     catch(_) {}
+    try { reader.cancel(); }      catch(_) {}
     try { reader.releaseLock(); } catch(_) {}
-    try { await port.close(); }  catch(_) {}
+    try { await port.close(); }   catch(_) {}
 
     if (buf.indexOf('CFG saved') >= 0 || buf.indexOf('Rebooting') >= 0) {
       setSCStatus('✓ Config saved — device rebooting!', 'ok');
@@ -1213,7 +1242,7 @@ async function doSendConfig() {
       setTimeout(function() { goToDone(cfg); }, 1200);
     } else {
       setSCStatus('No confirmation — try again.', 'error');
-      cfgLog('No confirmation received. Press EN/RST on the device, then click Send Config again.', 'warn');
+      cfgLog('No confirmation received. Press EN/RST on the device then click Send Config again.', 'warn');
       btn.disabled = false;
     }
 
