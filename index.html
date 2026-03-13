@@ -1181,11 +1181,12 @@ async function doSendConfig() {
 
     if (cfg.board === 'esp8266') {
       // Opening port triggered a DTR reset — device is now booting.
-      // Wait for CFG_READY beacon (up to 6s) then send immediately.
+      // Firmware sends CFG_READY every ~1s during boot/WiFi-wait loop.
+      // Just wait until we see it — no fixed delay needed.
       setSCStatus('Waiting for device to boot...', 'warn');
-      cfgLog('ESP8266 resetting — waiting for CFG_READY...', 'info');
+      cfgLog('ESP8266 resetting — waiting for CFG_READY beacon...', 'info');
 
-      var readyDeadline = Date.now() + 6000;
+      var readyDeadline = Date.now() + 8000;
       var ready = false;
       while (Date.now() < readyDeadline) {
         try {
@@ -1200,12 +1201,11 @@ async function doSendConfig() {
       }
 
       if (!ready) {
-        // CFG_READY not seen — device may be on older firmware or running already
-        // Try sending anyway — checkSerialConfig runs in the main loop too
-        cfgLog('CFG_READY not seen — sending anyway...', 'warn');
+        cfgLog('CFG_READY not seen — device may have older firmware. Sending anyway...', 'warn');
       } else {
-        cfgLog('Device ready — sending config...', 'ok');
+        cfgLog('✓ Device ready — sending config now...', 'ok');
       }
+      buf = ''; // clear boot chatter before reading confirmation
     }
 
     // Send the config packet
