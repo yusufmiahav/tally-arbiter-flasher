@@ -64,22 +64,18 @@ void addLog(const String& line) {
 }
 
 /* ── LED helpers ── */
-void setLEDs(bool red, bool green) {
+void setLEDs(bool red, bool green, bool blue = false) {
   if (USE_RGB) {
-    // RGB LED — blue unused for tally, just drive R and G
-    // Common anode: HIGH = off, LOW = on (inverted)
-    // Common cathode: HIGH = on, LOW = off (normal)
     if (RGB_ANODE) {
       digitalWrite(pinRed,   red   ? LOW  : HIGH);
       digitalWrite(pinGreen, green ? LOW  : HIGH);
-      digitalWrite(pinBlue,  HIGH); // blue always off
+      digitalWrite(pinBlue,  blue  ? LOW  : HIGH);
     } else {
       digitalWrite(pinRed,   red   ? HIGH : LOW);
       digitalWrite(pinGreen, green ? HIGH : LOW);
-      digitalWrite(pinBlue,  LOW);
+      digitalWrite(pinBlue,  blue  ? HIGH : LOW);
     }
   } else {
-    // Standard 2-pin separate LEDs
     digitalWrite(pinRed,   red   ? HIGH : LOW);
     digitalWrite(pinGreen, green ? HIGH : LOW);
   }
@@ -88,16 +84,16 @@ void setLEDs(bool red, bool green) {
 void evaluateMode() {
   if (mode_preview && !mode_program) {
     addLog("Tally: PREVIEW");
-    setLEDs(false, true);
+    setLEDs(false, true, false);
   } else if (!mode_preview && mode_program) {
     addLog("Tally: PROGRAM");
-    setLEDs(true, false);
+    setLEDs(true, false, false);
   } else if (mode_preview && mode_program) {
     addLog("Tally: PREVIEW+PROGRAM");
-    setLEDs(true, CUT_BUS ? false : true);
+    setLEDs(true, CUT_BUS ? false : true, false);
   } else {
     addLog("Tally: CLEAR");
-    setLEDs(false, false);
+    setLEDs(false, false, false);
   }
 }
 
@@ -218,10 +214,27 @@ void doRegister() {
 }
 
 void socket_Flash() {
-  for (int i = 0; i < 3; i++) {
-    setLEDs(true, true);   delay(300);
-    setLEDs(false, false); delay(300);
+  bool prev_preview = mode_preview;
+  bool prev_program = mode_program;
+  if (USE_RGB) {
+    // RGB: Red → Green → Blue × 3 cycles
+    for (int i = 0; i < 3; i++) {
+      setLEDs(true,  false, false); delay(150);
+      setLEDs(false, true,  false); delay(150);
+      setLEDs(false, false, true);  delay(150);
+    }
+  } else {
+    // 2-pin: flash whichever colour was active, or both if clear
+    bool flashRed   = prev_program || (!prev_program && !prev_preview);
+    bool flashGreen = prev_preview || (!prev_program && !prev_preview);
+    for (int i = 0; i < 3; i++) {
+      setLEDs(flashRed, flashGreen); delay(150);
+      setLEDs(false, false);         delay(150);
+    }
   }
+  setLEDs(false, false, false);
+  mode_preview = prev_preview;
+  mode_program = prev_program;
   evaluateMode();
 }
 
@@ -245,7 +258,7 @@ void socket_Reassign(const String& payload) {
   char buf[256]; obj.toCharArray(buf, sizeof(buf));
   ws_emit("listener_reassign_object", buf);
   ws_emit("devices");
-  for (int i = 0; i < 2; i++) { setLEDs(true, false); delay(200); setLEDs(false, false); delay(200); }
+  for (int i = 0; i < 2; i++) { setLEDs(true, false, false); delay(200); setLEDs(false, false, false); delay(200); }
 
   DeviceId = newId;
   preferences.begin("tally-arbiter", false);
@@ -259,7 +272,7 @@ void socket_event(socketIOmessageType_t type, uint8_t* payload, size_t length) {
     case sIOtype_CONNECT:
       addLog("Socket.IO connected.");
       socketConnected = true;
-      setLEDs(false, false);
+      setLEDs(false, false, false);
       pendingRegister = true;
       break;
 
@@ -532,7 +545,7 @@ void setup() {
   pinMode(pinRed,   OUTPUT);
   pinMode(pinGreen, OUTPUT);
   if (USE_RGB) pinMode(pinBlue, OUTPUT);
-  setLEDs(true, true); delay(200); setLEDs(false, false);
+  setLEDs(true, true, false); delay(200); setLEDs(false, false, false);
 
   setCpuFrequencyMhz(80);
   addLog("Booting: " + listenerDeviceName);
@@ -560,23 +573,22 @@ void setup() {
   // web flasher to send settings before proceeding
   if (networkSSID.length() == 0) {
     addLog("No WiFi config. Waiting for CFG packet...");
-    // Keep blinking and listening forever until config arrives
     while (networkSSID.length() == 0) {
-      setLEDs(true, false); delay(300);
-      setLEDs(false, true); delay(300);
-      checkSerialConfig(); // this reboots automatically after saving
+      setLEDs(true, false, false); delay(200);
+      setLEDs(false, true, false); delay(200);
+      checkSerialConfig();
     }
   }
 
   connectToNetwork();
   unsigned long t = millis();
   while (!networkConnected) {
-    setLEDs(true, false); delay(300);
-    setLEDs(false, true); delay(300);
+    setLEDs(false, false, true);  delay(300); // blue = connecting
+    setLEDs(false, false, false); delay(300);
     if (millis() - t > 30000) { addLog("WiFi timeout."); ESP.restart(); }
-    checkSerialConfig(); // still handle config while waiting
+    checkSerialConfig();
   }
-  setLEDs(false, false);
+  setLEDs(false, false, false);
 
   webServer.on("/",       handleRoot);
   webServer.on("/save",   handleSave);
