@@ -579,6 +579,13 @@ void setup() {
   // Generate unique device name from chip ID
   listenerDeviceName = "esp8266-" + String(ESP.getChipId(), HEX);
 
+  // Save compiled-in values before loadConfig() overwrites them.
+  // If the binary was patched by the web flasher these will be real credentials.
+  String compiledSSID = networkSSID;
+  String compiledPass = networkPass;
+  String compiledHost = tallyarbiter_host;
+  String compiledName = listenerDeviceName; // will be overwritten by chip ID above
+
   // Mount filesystem and load saved config
   if (!LittleFS.begin()) {
     Serial.println("LittleFS mount failed — formatting...");
@@ -587,6 +594,20 @@ void setup() {
   }
 
   bool hadSavedConfig = loadConfig();
+
+  // If the binary was patched with real credentials (not placeholders),
+  // always use them — this lets a reflash update WiFi/TA settings
+  // even when an old config.json exists on LittleFS.
+  bool compiledIsReal = compiledSSID.length() > 0 && !compiledSSID.startsWith("TALLY_");
+  if (compiledIsReal) {
+    Serial.println("Patched binary detected — overriding saved config with flashed values.");
+    networkSSID       = compiledSSID;
+    networkPass       = compiledPass;
+    tallyarbiter_host = compiledHost;
+    // Save immediately so future reboots use these values
+    saveConfig();
+    hadSavedConfig = false; // show as "patched" in boot log
+  }
 
   // Set up LED pins — initLEDPins handles GPIO16 quirk
   initLEDPins();
@@ -604,7 +625,7 @@ void setup() {
   Serial.println("Device ID: " + DeviceId);
   Serial.println("LED Type : " + String(USE_RGB ? "RGB" : "2-pin") +
                  (USE_RGB ? (RGB_ANODE ? " Common-Anode" : " Common-Cathode") : ""));
-  Serial.println("Config   : " + String(hadSavedConfig ? "Loaded from flash" : "Using defaults"));
+  Serial.println("Config   : " + String(compiledIsReal ? "Patched binary" : hadSavedConfig ? "Loaded from flash" : "Using defaults"));
   Serial.println("=============================");
   Serial.println("CFG_READY"); // signal to web flasher that device is ready to receive config
 
