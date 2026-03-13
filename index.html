@@ -917,13 +917,15 @@ async function startFlash() {
 
     try { await conn.esp.softReset(); } catch(_) {}
     try { await conn.transport.disconnect(); } catch(_) {}
+    try { await serialPort.close(); } catch(_) {} // fully release so config send gets a clean port
     serialPort = null;
+    await delay(600); // give OS time to release the port
     setProgress(100, 'Done!');
     setFlashBadge('Flashed ✓', 'ok');
     flashLog('Device rebooting — config sent, moving to confirmation...', 'ok');
 
     await delay(800);
-    populateSendConfig(cfg, null); // no port needed — packet already in buffer
+    populateSendConfig(cfg, null);
     goTo(3);
 
   } catch(e) {
@@ -1012,7 +1014,9 @@ async function startCleanFlash() {
 
     try { await conn.esp.softReset(); } catch(_) {}
     try { await conn.transport.disconnect(); } catch(_) {}
+    try { await serialPort.close(); } catch(_) {}
     serialPort = null;
+    await delay(600);
     setProgress(100, 'Done!');
     setFlashBadge('Flashed ✓', 'ok');
     flashLog('Device rebooting — config sent, moving to confirmation...', 'ok');
