@@ -838,6 +838,44 @@ function buildCFGPacket(cfg) {
 }
 
 // ─────────────────────────────────────
+//  Binary patcher — finds placeholder strings in firmware and overwrites in place
+//  Placeholders must be longer than any real value and null-terminated in the binary
+// ─────────────────────────────────────
+function patchFirmwareBinary(buf, replacements) {
+  var bytes = new Uint8Array(buf.slice(0)); // copy
+  var enc   = new TextEncoder();
+
+  replacements.forEach(function(r) {
+    var needle  = enc.encode(r.placeholder);
+    var value   = enc.encode(r.value);
+    if (value.length > needle.length) {
+      throw new Error('Value "' + r.value + '" is too long for placeholder "' + r.placeholder + '" (' + value.length + ' > ' + needle.length + ')');
+    }
+
+    // Search for placeholder in binary
+    var found = false;
+    for (var i = 0; i <= bytes.length - needle.length; i++) {
+      var match = true;
+      for (var j = 0; j < needle.length; j++) {
+        if (bytes[i + j] !== needle[j]) { match = false; break; }
+      }
+      if (match) {
+        // Overwrite with value + null padding
+        for (var k = 0; k < needle.length; k++) {
+          bytes[i + k] = k < value.length ? value[k] : 0;
+        }
+        found = true;
+        flashLog('Patched: ' + r.placeholder.split('_')[1] + ' → "' + r.value + '"', 'ok');
+        break;
+      }
+    }
+    if (!found) flashLog('Warning: placeholder not found for ' + r.placeholder.split('_')[1], 'warn');
+  });
+
+  return bytes.buffer;
+}
+
+// ─────────────────────────────────────
 //  Fetch firmware helpers
 // ─────────────────────────────────────
 async function fetchFirmware() {
@@ -849,7 +887,17 @@ async function fetchFirmware() {
     var fwRes = await fetch(base + 'firmware/tally-arbiter-esp8266.ino.bin');
     if (!fwRes.ok) throw new Error('ESP8266 firmware not found (' + fwRes.status + ') — check CI build');
     var fwBuf = await fwRes.arrayBuffer();
-    flashLog('Firmware ' + (fwBuf.byteLength/1024).toFixed(1) + ' KB loaded.', 'ok');
+    flashLog('Firmware ' + (fwBuf.byteLength/1024).toFixed(1) + ' KB loaded — patching config...', 'ok');
+
+    // Patch WiFi and TA settings directly into the binary
+    var cfg = savedCfg || getConfig();
+    fwBuf = patchFirmwareBinary(fwBuf, [
+      { placeholder: 'TALLY_SSID_PLACEHOLDER_00000000000000000000000000000000', value: cfg.ssid },
+      { placeholder: 'TALLY_PASS_PLACEHOLDER_00000000000000000000000000000000', value: cfg.pass },
+      { placeholder: 'TALLY_HOST_PLACEHOLDER_000000000000000',                  value: cfg.taHost },
+      { placeholder: 'TALLY_NAME_PLACEHOLDER_000000000000000',                  value: cfg.lName }
+    ]);
+    flashLog('Binary patched — WiFi and TA settings embedded.', 'ok');
     return { board: 'esp8266', fwBuf };
   } else {
     var [fwRes, blRes, ptRes] = await Promise.all([
