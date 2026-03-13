@@ -83,21 +83,21 @@ void initLEDPins() {
   if (USE_RGB) { pinMode(pinBlue, OUTPUT); digitalWrite(pinBlue, USE_RGB && RGB_ANODE ? HIGH : LOW); }
 }
 
-void setLEDs(bool red, bool green) {
+void setLEDs(bool red, bool green, bool blue = false) {
   if (USE_RGB) {
     if (RGB_ANODE) {
       // Common Anode (3.3V on common): LOW = on, HIGH = off
       digitalWrite(pinRed,   red   ? LOW  : HIGH);
       digitalWrite(pinGreen, green ? LOW  : HIGH);
-      digitalWrite(pinBlue,  HIGH);
+      digitalWrite(pinBlue,  blue  ? LOW  : HIGH);
     } else {
       // Common Cathode (GND on common): HIGH = on, LOW = off
       digitalWrite(pinRed,   red   ? HIGH : LOW);
       digitalWrite(pinGreen, green ? HIGH : LOW);
-      digitalWrite(pinBlue,  LOW);
+      digitalWrite(pinBlue,  blue  ? HIGH : LOW);
     }
   } else {
-    // 2-pin: D0=Red, D2=Green, each with resistor to GND
+    // 2-pin: red and green only
     digitalWrite(pinRed,   red   ? HIGH : LOW);
     digitalWrite(pinGreen, green ? HIGH : LOW);
   }
@@ -106,17 +106,16 @@ void setLEDs(bool red, bool green) {
 void evaluateMode() {
   if (mode_preview && !mode_program) {
     addLog("Tally: PREVIEW");
-    setLEDs(false, true);
+    setLEDs(false, true, false);
   } else if (!mode_preview && mode_program) {
     addLog("Tally: PROGRAM");
-    setLEDs(true, false);
+    setLEDs(true, false, false);
   } else if (mode_preview && mode_program) {
     addLog("Tally: PREVIEW+PROGRAM");
-    // CUT_BUS: if both buses active, show Red only (program takes priority)
-    setLEDs(true, CUT_BUS ? false : true);
+    setLEDs(true, CUT_BUS ? false : true, false);
   } else {
     addLog("Tally: CLEAR");
-    setLEDs(false, false);
+    setLEDs(false, false, false);
   }
 }
 
@@ -404,16 +403,15 @@ void socketEvent(socketIOmessageType_t type, uint8_t* payload, size_t length) {
       // ── flash ──
       } else if (event == "flash") {
         addLog("Flash command received.");
-        // Save current state before flashing
         bool prev_preview = mode_preview;
         bool prev_program = mode_program;
+        // RGB flash: Red → Green → Blue × 3 cycles
         for (int i = 0; i < 3; i++) {
-          setLEDs(true,  false); delay(150);
-          setLEDs(false, true);  delay(150);
+          setLEDs(true,  false, false); delay(150);
+          setLEDs(false, true,  false); delay(150);
+          setLEDs(false, false, true);  delay(150);
         }
-        setLEDs(false, false);
-        // Restore state explicitly — don't rely on globals being intact
-        // after blocking delays (socket may have missed updates)
+        setLEDs(false, false, false);
         mode_preview = prev_preview;
         mode_program = prev_program;
         evaluateMode();
@@ -613,7 +611,7 @@ void setup() {
   initLEDPins();
 
   // Startup flash: both on briefly then off
-  setLEDs(true, true); delay(300); setLEDs(false, false); delay(100);
+  setLEDs(true, true, false); delay(300); setLEDs(false, false, false); delay(100);
 
   // Print boot info
   Serial.println("=== Tally Arbiter ESP8266 ===");
@@ -640,23 +638,22 @@ void setup() {
   if (!hasConfig) {
     Serial.println("No WiFi config — connect via web UI after flashing, or send CFG packet.");
     while (true) {
-      setLEDs(true, false);  delay(300);
-      setLEDs(false, true);  delay(300);
-      checkSerialConfig(); // still accept CFG packet if sent
+      // No config: fast red/green alternating — needs setup
+      setLEDs(true, false, false);  delay(200);
+      setLEDs(false, true, false);  delay(200);
+      checkSerialConfig();
       yield();
-      // Re-check in case loadConfig was called by checkSerialConfig
       if (networkSSID.length() > 0 && !networkSSID.startsWith("TALLY_")) break;
     }
   }
 
-  // Also signal ready during WiFi connect wait — flasher may be sending config
-  // to a device that already has WiFi but needs updated settings
+  // WiFi connecting: blue pulse — distinct from tally states
   connectToNetwork();
   unsigned long t = millis();
   unsigned long lastBeacon = 0;
   while (!networkConnected) {
-    setLEDs(true, false);  delay(300);
-    setLEDs(false, true);  delay(300);
+    setLEDs(false, false, true);   delay(300);  // blue on
+    setLEDs(false, false, false);  delay(300);  // off
     if (millis() - lastBeacon > 1000) {
       Serial.println("CFG_READY");
       lastBeacon = millis();
@@ -668,9 +665,8 @@ void setup() {
       ESP.restart();
     }
   }
-  // Re-init pins after blink loop — GPIO16 can drift
   initLEDPins();
-  setLEDs(false, false);
+  setLEDs(false, false, false);
   addLog("WiFi OK: " + WiFi.localIP().toString());
 
   // Start web server
