@@ -610,18 +610,24 @@ void setup() {
     while (networkSSID.length() == 0) {
       setLEDs(true, false);  delay(300);
       setLEDs(false, true);  delay(300);
-      checkSerialConfig();   // saves & reboots if received
-      yield();               // ESP8266 needs explicit yield to avoid WDT reset
+      Serial.println("CFG_READY"); // keep signalling so JS can send at any time
+      checkSerialConfig();
+      yield();
     }
   }
 
+  // Also signal ready during WiFi connect wait — flasher may be sending config
+  // to a device that already has WiFi but needs updated settings
   connectToNetwork();
-
-  // Wait for WiFi with 30s timeout, keep checking for CFG while waiting
   unsigned long t = millis();
+  unsigned long lastBeacon = 0;
   while (!networkConnected) {
     setLEDs(true, false);  delay(300);
     setLEDs(false, true);  delay(300);
+    if (millis() - lastBeacon > 1000) {
+      Serial.println("CFG_READY");
+      lastBeacon = millis();
+    }
     checkSerialConfig();
     yield();
     if (millis() - t > 30000) {
