@@ -1181,32 +1181,24 @@ async function doSendConfig() {
     var buf     = '';
 
     if (cfg.board === 'esp8266') {
-      // Opening port triggered a DTR reset — device is now booting.
-      // Firmware sends CFG_READY every ~1s during boot/WiFi-wait loop.
-      // Just wait until we see it — no fixed delay needed.
+      // Opening port triggered a DTR reset — device boots in ~1.5s.
+      // Wait 2s then send — this reliably lands inside checkSerialConfig's window.
+      // We drain any incoming bytes (ROM bootloader noise + boot log) while waiting.
       setSCStatus('Waiting for device to boot...', 'warn');
-      cfgLog('ESP8266 resetting — waiting for CFG_READY beacon...', 'info');
+      cfgLog('ESP8266 resetting — sending in 2s...', 'info');
 
-      var readyDeadline = Date.now() + 8000;
-      var ready = false;
-      while (Date.now() < readyDeadline) {
+      var waitUntil = Date.now() + 2000;
+      while (Date.now() < waitUntil) {
         try {
-          var r = await Promise.race([reader.read(), delay(100).then(function(){ return {value:null}; })]);
+          var r = await Promise.race([reader.read(), delay(50).then(function(){ return {value:null}; })]);
           if (r.value) {
             var txt = dec.decode(r.value);
-            buf += txt;
             txt.split('\n').forEach(function(l) { if (l.trim()) cfgLog('← ' + l.trim(), 'dim'); });
-            if (buf.indexOf('CFG_READY') >= 0) { ready = true; break; }
           }
         } catch(_) { break; }
       }
-
-      if (!ready) {
-        cfgLog('CFG_READY not seen — device may have older firmware. Sending anyway...', 'warn');
-      } else {
-        cfgLog('✓ Device ready — sending config now...', 'ok');
-      }
-      buf = ''; // clear boot chatter before reading confirmation
+      buf = ''; // discard boot chatter — only care about post-send confirmation
+      cfgLog('Sending config...', 'ok');
     }
 
     // Send the config packet
@@ -1214,25 +1206,26 @@ async function doSendConfig() {
     var cmd = buildCFGPacket(cfg);
     cfgLog('→ Sending config (' + (cmd.length - 5) + ' bytes)...', 'info');
     await writer.write(encoder.encode(cmd));
+    writer.releaseLock();
     cfgLog('Packet sent. Waiting for confirmation...', 'info');
 
-    // Read confirmation (up to 8s)
-    var confirmDeadline = Date.now() + 8000;
+    // Read confirmation — use longer window for ESP8266 which may be busy with socket events
+    var confirmWindow = (cfg.board === 'esp8266') ? 12000 : 8000;
+    var confirmDeadline = Date.now() + confirmWindow;
     while (Date.now() < confirmDeadline) {
       try {
         var r = await Promise.race([reader.read(), delay(100).then(function(){ return {value:null}; })]);
         if (r.value) {
           var txt = dec.decode(r.value);
           buf += txt;
+          // Log every non-empty line so we can see what the device is sending back
           txt.split('\n').forEach(function(l) {
-            if (l.trim()) cfgLog('← ' + l.trim(), (l.indexOf('CFG') >= 0 || l.indexOf('saved') >= 0) ? 'ok' : 'dim');
+            if (l.trim()) cfgLog('← ' + l.trim(), (l.indexOf('CFG') >= 0 || l.indexOf('saved') >= 0 || l.indexOf('Reboot') >= 0) ? 'ok' : 'dim');
           });
           if (buf.indexOf('CFG saved') >= 0 || buf.indexOf('Rebooting') >= 0) break;
         }
       } catch(_) { break; }
     }
-
-    writer.releaseLock();
     try { reader.cancel(); }      catch(_) {}
     try { reader.releaseLock(); } catch(_) {}
     try { await port.close(); }   catch(_) {}
