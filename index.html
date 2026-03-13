@@ -1,700 +1,1553 @@
-/*
- * Tally Arbiter ESP8266 Listener
- * ================================
- * Pin mapping (NodeMCU / D1 Mini):
- *   2-pin mode:  D0 (GPIO16) = Red,  D2 (GPIO4) = Green
- *   RGB mode:    D0 (GPIO16) = Red,  D2 (GPIO4) = Green,  D1 (GPIO5) = Blue
- *                3.3V pin = Common (Anode) or GND = Common (Cathode)
- *
- * Config is stored in LittleFS as /config.json
- * Web flasher sends: CFG:{json}\n via serial to write config
- */
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tally Arbiter ESP Flasher</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Barlow+Condensed:wght@300;400;600;700&display=swap" rel="stylesheet">
+<script type="module">
+import { ESPLoader, Transport } from "https://unpkg.com/esptool-js@0.5.7/bundle.js";
+window._ESPLoader = ESPLoader;
+window._Transport = Transport;
+</script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --red:#ff2d2d;--green:#00e676;--amber:#ffab00;--blue:#2979ff;
+  --bg:#080808;--bg2:#0f0f0f;--panel:#141414;
+  --border:#222;--border2:#2e2e2e;
+  --text:#e8e8e8;--muted:#4a4a4a;
+  --mono:'Share Tech Mono',monospace;
+  --sans:'Barlow Condensed',sans-serif;
+}
+body.light{
+  --bg:#f4f4f4;--bg2:#eaeaea;--panel:#ffffff;
+  --border:#d0d0d0;--border2:#bbbbbb;
+  --text:#111111;--muted:#888888;
+  --red:#cc1111;--green:#008844;--amber:#cc7700;--blue:#1155cc;
+}
+body.light::before{background:none}
+body.light .terminal{background:#fafafa;color:#444}
+body.light .monitor-box{background:#fafafa;color:#333}
+body.light .field input{background:#fff;color:#111}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:100vh;overflow-x:hidden;transition:background .2s,color .2s}
+body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.03) 2px,rgba(0,0,0,.03) 4px);pointer-events:none;z-index:9999}
 
-#include <ESP8266WiFi.h>
-#include <ESP8266WebServer.h>
-#include <WebSocketsClient.h>
-#include <SocketIOclient.h>
-#include <ArduinoJson.h>
-#include <LittleFS.h>
+/* theme toggle */
+#theme-btn{position:fixed;top:14px;right:14px;z-index:1000;background:var(--panel);border:1px solid var(--border2);border-radius:3px;color:var(--muted);font-family:var(--mono);font-size:.65rem;padding:.35rem .65rem;cursor:pointer;letter-spacing:.1em;transition:all .2s}
+#theme-btn:hover{border-color:var(--red);color:var(--text)}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:100vh;overflow-x:hidden}
+body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.03) 2px,rgba(0,0,0,.03) 4px);pointer-events:none;z-index:9999}
 
-/* ── Pin definitions ── */
-#define PIN_RED   16   // D0
-#define PIN_GREEN  4   // D2
-#define PIN_BLUE   5   // D1
+/* brackets */
+.bracket{position:fixed;width:60px;height:60px;border-color:var(--red);border-style:solid;opacity:.2;z-index:100}
+.bracket.tl{top:16px;left:16px;border-width:2px 0 0 2px}
+.bracket.tr{top:16px;right:16px;border-width:2px 2px 0 0}
+.bracket.bl{bottom:16px;left:16px;border-width:0 0 2px 2px}
+.bracket.br{bottom:16px;right:16px;border-width:0 2px 2px 0}
 
-/* ── Default config — overwritten by CFG packet or saved config ── */
-// TEST credentials — replace via web UI or CFG packet in production
-String networkSSID       = "TALLY_SSID_PLACEHOLDER_00000000000000000000000000000000";
-String networkPass       = "TALLY_PASS_PLACEHOLDER_00000000000000000000000000000000";
-String tallyarbiter_host = "TALLY_HOST_PLACEHOLDER_000000000000000";
-int    tallyarbiter_port = 4455;
-String listenerDeviceName = "TALLY_NAME_PLACEHOLDER_000000000000000";
-String DeviceId          = "unassigned";
-String DeviceName        = "Unassigned";
+/* screens — only one visible at a time */
+.screen{display:none;max-width:700px;margin:0 auto;padding:3rem 1.5rem 5rem;animation:fadeIn .25s ease}
+.screen.active{display:block}
+@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 
-bool CUT_BUS   = true;
-bool USE_RGB   = true;   // 4-pin RGB LED
-bool RGB_ANODE = true;   // common pin on 3.3V = common anode
-bool USE_STATIC = false;
+/* header */
+header{text-align:center;margin-bottom:2.5rem}
+.logo-row{display:flex;align-items:center;justify-content:center;gap:16px;margin-bottom:.5rem}
+.tally-indicator{display:flex;flex-direction:column;gap:5px}
+.dot{width:10px;height:10px;border-radius:50%}
+.dot.r{background:var(--red);box-shadow:0 0 8px var(--red);animation:blink 2.2s ease-in-out infinite}
+.dot.g{background:var(--green);box-shadow:0 0 8px var(--green);animation:blink 2.2s ease-in-out infinite 1.1s}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
+h1{font-family:var(--mono);font-size:clamp(1.4rem,4vw,2rem);letter-spacing:.18em;color:#fff;text-transform:uppercase}
+.tagline{font-family:var(--mono);font-size:.68rem;letter-spacing:.3em;color:var(--muted);text-transform:uppercase;margin-top:.35rem}
 
-IPAddress clientIp(192, 168, 1, 100);
-IPAddress gateway(192, 168, 1, 1);
-IPAddress subnet(255, 255, 255, 0);
+/* step bar */
+.steps{display:flex;align-items:center;justify-content:center;margin-bottom:2rem}
+.step{display:flex;flex-direction:column;align-items:center;gap:5px}
+.step-num{width:32px;height:32px;border-radius:50%;border:1.5px solid var(--border2);background:var(--panel);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:.75rem;color:var(--muted);transition:all .3s}
+.step-label{font-family:var(--mono);font-size:.55rem;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);transition:color .3s;white-space:nowrap}
+.step.active .step-num{border-color:var(--red);color:var(--red);background:rgba(255,45,45,.08);box-shadow:0 0 12px rgba(255,45,45,.2)}
+.step.active .step-label{color:var(--red)}
+.step.done .step-num{border-color:var(--green);color:var(--green);background:rgba(0,230,118,.08)}
+.step.done .step-label{color:var(--green)}
+.step-line{width:48px;height:1px;background:var(--border);margin:0 4px 22px;flex-shrink:0}
 
-int pinRed   = PIN_RED;
-int pinGreen = PIN_GREEN;
-int pinBlue  = PIN_BLUE;
+/* cards */
+.card{background:var(--panel);border:1px solid var(--border);border-radius:4px;padding:1.75rem;margin-bottom:1rem;position:relative;overflow:hidden}
+.card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--red),transparent);opacity:0;transition:opacity .3s}
+.card.lit::before{opacity:1}
+.card-label{font-family:var(--mono);font-size:.6rem;letter-spacing:.28em;text-transform:uppercase;color:var(--red);margin-bottom:1.25rem;display:flex;align-items:center;gap:8px}
+.card-label::after{content:'';flex:1;height:1px;background:var(--border)}
 
-/* ── Runtime state ── */
-ESP8266WebServer webServer(80);
-SocketIOclient   socket;
+/* fields */
+.field{margin-bottom:1.1rem}
+.field:last-child{margin-bottom:0}
+.field label{display:block;font-family:var(--mono);font-size:.62rem;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);margin-bottom:.4rem}
+.field input{width:100%;background:var(--bg);border:1px solid var(--border2);border-radius:3px;color:var(--text);font-family:var(--mono);font-size:.92rem;padding:.6rem .8rem;outline:none;transition:border-color .2s,box-shadow .2s}
+.field input:focus{border-color:var(--red);box-shadow:0 0 0 3px rgba(255,45,45,.08)}
+.row2{display:flex;gap:.75rem}
+.row2 .field{flex:1}
+.row2 .field.narrow{flex:0 0 110px}
+.hint{font-family:var(--mono);font-size:.6rem;color:var(--muted);margin-top:.35rem;line-height:1.5}
+.divider{height:1px;background:var(--border);margin:1.25rem 0}
 
-StaticJsonDocument<4096> BusOptions;
-StaticJsonDocument<8192> Devices;
-StaticJsonDocument<4096> DeviceStates;
+/* toggle */
+.toggle-row{display:flex;align-items:center;justify-content:space-between;padding:.6rem 0}
+.toggle-label{font-family:var(--mono);font-size:.65rem;letter-spacing:.12em;text-transform:uppercase;color:var(--text)}
+.toggle{position:relative;width:40px;height:22px}
+.toggle input{display:none}
+.toggle-track{position:absolute;inset:0;background:var(--border2);border-radius:11px;cursor:pointer;transition:background .2s}
+.toggle-track::after{content:'';position:absolute;top:3px;left:3px;width:16px;height:16px;background:var(--muted);border-radius:50%;transition:transform .2s,background .2s}
+.toggle input:checked+.toggle-track{background:rgba(255,45,45,.3)}
+.toggle input:checked+.toggle-track::after{transform:translateX(18px);background:var(--red)}
 
-bool mode_preview     = false;
-bool mode_program     = false;
-bool networkConnected = false;
-bool socketConnected  = false;
-bool pendingRegister  = false;
-bool socketPaused     = false;
+/* buttons */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;font-family:var(--mono);font-size:.82rem;letter-spacing:.14em;text-transform:uppercase;padding:.75rem 1.5rem;border:none;border-radius:3px;cursor:pointer;transition:all .18s;white-space:nowrap}
+.btn-primary{background:var(--red);color:#fff}
+.btn-primary:hover:not(:disabled){background:#e01c1c;transform:translateY(-1px);box-shadow:0 4px 16px rgba(255,45,45,.3)}
+.btn-green{background:var(--green);color:#000}
+.btn-green:hover:not(:disabled){background:#00c060;transform:translateY(-1px);box-shadow:0 4px 16px rgba(0,230,118,.25)}
+.btn-ghost{background:transparent;color:var(--text);border:1px solid var(--border2)}
+.btn-ghost:hover:not(:disabled){border-color:var(--muted)}
+.btn:disabled{opacity:.35;cursor:not-allowed}
+.btn-row{display:flex;gap:.75rem;margin-top:1.25rem;flex-wrap:wrap}
+.btn-full{width:100%}
 
-/* ── Log ring buffer ── */
-#define LOG_LINES 30
-String logBuffer[LOG_LINES];
-int    logHead = 0;
+/* progress */
+.progress-wrap{margin-top:1.25rem;display:none}
+.progress-wrap.show{display:block}
+.progress-header{display:flex;justify-content:space-between;margin-bottom:.5rem}
+.progress-label{font-family:var(--mono);font-size:.62rem;letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
+.progress-pct{font-family:var(--mono);font-size:.75rem;color:var(--green)}
+.progress-track{height:4px;background:var(--border);border-radius:2px;overflow:hidden}
+.progress-fill{height:100%;background:linear-gradient(90deg,var(--red),var(--amber));border-radius:2px;width:0%;transition:width .3s}
+.progress-fill.done{background:var(--green)}
 
-void addLog(const String& line) {
-  Serial.println(line);
-  logBuffer[logHead % LOG_LINES] = line;
-  logHead++;
+/* terminal / log */
+.terminal{background:#030303;border:1px solid var(--border);border-radius:3px;padding:.8rem 1rem;overflow-y:auto;font-family:var(--mono);font-size:.68rem;line-height:1.7;color:#5a5a5a;margin-top:1rem;scroll-behavior:smooth}
+.terminal .log-info{color:#5a5a5a}
+.terminal .log-ok{color:var(--green)}
+.terminal .log-warn{color:var(--amber)}
+.terminal .log-error{color:var(--red)}
+.terminal .log-dim{color:#333}
+.terminal .log-heading{color:#777;letter-spacing:.1em}
+
+/* badge */
+.badge{display:inline-flex;align-items:center;gap:5px;padding:2px 10px;border-radius:2px;font-family:var(--mono);font-size:.65rem;letter-spacing:.1em}
+.badge::before{content:'';width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.badge-ok{background:rgba(0,230,118,.1);color:var(--green)}
+.badge-ok::before{background:var(--green);box-shadow:0 0 6px var(--green)}
+.badge-error{background:rgba(255,45,45,.1);color:var(--red)}
+.badge-error::before{background:var(--red)}
+.badge-warn{background:rgba(255,171,0,.1);color:var(--amber)}
+.badge-warn::before{background:var(--amber)}
+.badge-idle{background:rgba(255,255,255,.04);color:var(--muted)}
+.badge-idle::before{background:var(--muted)}
+
+/* statusbar */
+.statusbar{display:flex;align-items:center;justify-content:space-between;padding:.6rem .8rem;background:var(--bg2);border:1px solid var(--border);border-radius:3px;margin-bottom:1rem}
+.statusbar-left{font-family:var(--mono);font-size:.62rem;letter-spacing:.15em;text-transform:uppercase;color:var(--muted)}
+
+/* alert */
+.alert{padding:.8rem 1rem;border-radius:3px;font-family:var(--mono);font-size:.7rem;line-height:1.6;letter-spacing:.05em;margin-bottom:1rem;display:flex;gap:10px;align-items:flex-start}
+.alert-icon{flex-shrink:0;font-size:.9rem}
+.alert-warn{background:rgba(255,171,0,.08);border:1px solid rgba(255,171,0,.2);color:var(--amber)}
+.alert-info{background:rgba(255,45,45,.05);border:1px solid rgba(255,45,45,.12);color:#888}
+.alert-green{background:rgba(0,230,118,.06);border:1px solid rgba(0,230,118,.2);color:var(--green)}
+
+/* done screen big tick */
+.big-tick{font-size:4.5rem;line-height:1;margin-bottom:1rem;animation:pop .4s cubic-bezier(.175,.885,.32,1.275)}
+@keyframes pop{from{transform:scale(0);opacity:0}to{transform:scale(1);opacity:1}}
+.done-title{font-family:var(--mono);font-size:1.3rem;letter-spacing:.2em;color:var(--green);text-transform:uppercase;margin-bottom:.4rem}
+.done-sub{font-family:var(--mono);font-size:.7rem;color:var(--muted);letter-spacing:.1em;margin-bottom:2rem}
+
+/* serial monitor (screen 4 only) */
+.monitor-box{background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:.75rem;font-family:var(--mono);font-size:.65rem;color:#aaa;height:280px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;line-height:1.6}
+
+/* browser warn */
+#browser-warn{display:none;max-width:680px;margin:5rem auto;padding:0 1.5rem}
+
+@media(max-width:480px){.row2{flex-direction:column}.row2 .field.narrow{flex:1}.step-line{width:24px}}
+</style>
+</head>
+<body>
+
+<div class="bracket tl"></div><div class="bracket tr"></div>
+<div class="bracket bl"></div><div class="bracket br"></div>
+
+<button id="theme-btn" onclick="toggleTheme()">☀ Light</button>
+
+<!-- ═══ BROWSER WARN ═══ -->
+<div id="browser-warn">
+  <div class="alert alert-warn">
+    <span class="alert-icon">⚠</span>
+    <div><strong>Browser not supported.</strong><br>
+    This tool requires <strong>Google Chrome</strong> or <strong>Microsoft Edge</strong> (v89+). Firefox and Safari do not support Web Serial.</div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════
+     SCREEN 1 — Configure Settings
+════════════════════════════════════════════ -->
+<div class="screen active" id="screen-1">
+  <header>
+    <div class="logo-row">
+      <div class="tally-indicator"><div class="dot r"></div><div class="dot g"></div></div>
+      <h1>Tally Arbiter</h1>
+      <div class="tally-indicator"><div class="dot g"></div><div class="dot r"></div></div>
+    </div>
+    <div class="tagline">ESP Web Flasher &mdash; v1.1</div>
+  </header>
+
+  <div class="steps">
+    <div class="step active"><div class="step-num">1</div><div class="step-label">Configure</div></div>
+    <div class="step-line"></div>
+    <div class="step"><div class="step-num">2</div><div class="step-label">Flash</div></div>
+    <div class="step-line"></div>
+    <div class="step"><div class="step-num">3</div><div class="step-label">Send Config</div></div>
+    <div class="step-line"></div>
+    <div class="step"><div class="step-num">4</div><div class="step-label">Done</div></div>
+  </div>
+
+  <!-- Board selector -->
+  <div class="card lit">
+    <div class="card-label">// 00 &mdash; Board Type</div>
+    <div style="display:flex;gap:.75rem;margin-top:.25rem">
+      <button class="btn btn-ghost" id="btn-board-esp32"  onclick="setBoard('esp32')"
+        style="flex:1;padding:.6rem;font-size:.78rem;border-color:var(--red);color:var(--red)">
+        ● ESP32
+      </button>
+      <button class="btn btn-ghost" id="btn-board-esp8266" onclick="setBoard('esp8266')"
+        style="flex:1;padding:.6rem;font-size:.78rem">
+        ◉ ESP8266 / D1 Mini
+      </button>
+    </div>
+    <div class="hint" id="board-hint" style="margin-top:.6rem">
+      ESP32 DevKit — 30/38 pin board. Use BOOT + EN/RST to enter flash mode if needed.
+    </div>
+  </div>
+
+  <!-- WiFi -->
+  <div class="card lit">
+    <div class="card-label">// 01 &mdash; WiFi Network</div>
+    <div class="field">
+      <label>WiFi SSID</label>
+      <input type="text" id="wifi-ssid" placeholder="YourNetworkName" autocomplete="off" spellcheck="false">
+      <div class="hint">2.4 GHz only — ESP devices do not support 5 GHz.</div>
+    </div>
+    <div class="field">
+      <label>WiFi Password</label>
+      <input type="password" id="wifi-pass" placeholder="••••••••••••" autocomplete="off">
+    </div>
+    <div class="divider"></div>
+    <div class="toggle-row">
+      <span class="toggle-label">Use Static IP</span>
+      <label class="toggle"><input type="checkbox" id="use-static" onchange="toggleStatic()"><span class="toggle-track"></span></label>
+    </div>
+    <div id="static-fields" style="display:none;margin-top:.75rem">
+      <div class="row2">
+        <div class="field"><label>Device IP</label><input type="text" id="static-ip" placeholder="192.168.1.100"></div>
+        <div class="field"><label>Gateway</label><input type="text" id="static-gw" placeholder="192.168.1.1"></div>
+      </div>
+      <div class="field"><label>Subnet Mask</label><input type="text" id="static-sn" placeholder="255.255.255.0"></div>
+    </div>
+  </div>
+
+  <!-- Tally Arbiter -->
+  <div class="card">
+    <div class="card-label">// 02 &mdash; Tally Arbiter Server</div>
+    <div class="row2">
+      <div class="field">
+        <label>Server IP Address</label>
+        <input type="text" id="ta-host" placeholder="192.168.1.x" autocomplete="off" list="ta-host-history" onblur="saveHostHistory()">
+        <datalist id="ta-host-history"></datalist>
+      </div>
+      <div class="field narrow">
+        <label>Port</label>
+        <input type="number" id="ta-port" value="4455">
+      </div>
+    </div>
+    <div class="field">
+      <label>Listener Name</label>
+      <input type="text" id="listener-name" placeholder="esp32-tally-1" autocomplete="off">
+      <div class="hint">Shown in the TA Listeners panel. Leave blank to auto-generate from chip ID.</div>
+    </div>
+    <div class="divider"></div>
+    <div class="toggle-row">
+      <span class="toggle-label">CUT BUS — Program + Preview shows Red only</span>
+      <label class="toggle"><input type="checkbox" id="cut-bus" checked><span class="toggle-track"></span></label>
+    </div>
+  </div>
+
+  <!-- Hardware -->
+  <div class="card">
+    <div class="card-label">// 03 &mdash; LED Hardware</div>
+    <div class="toggle-row" style="margin-bottom:.75rem">
+      <span class="toggle-label">LED Type</span>
+      <div style="display:flex;gap:.5rem">
+        <button class="btn btn-ghost" id="btn-led-2pin" onclick="setLedType('2pin')" style="padding:.3rem .8rem;font-size:.7rem;border-color:var(--red);color:var(--red)">● 2-Pin (R+G)</button>
+        <button class="btn btn-ghost" id="btn-led-rgb"  onclick="setLedType('rgb')"  style="padding:.3rem .8rem;font-size:.7rem">◉ 4-Pin RGB</button>
+      </div>
+    </div>
+    <div id="pins-2pin">
+      <div class="row2">
+        <div class="field"><label>Red Pin — Program</label><input type="number" id="pin-red" value="23"></div>
+        <div class="field"><label>Green Pin — Preview</label><input type="number" id="pin-green" value="22"></div>
+      </div>
+      <div class="hint" id="pin-2pin-hint">Two separate LEDs, each with a 220Ω resistor to GND.</div>
+    </div>
+    <div id="pins-rgb" style="display:none">
+      <div class="row2">
+        <div class="field"><label>Red Pin</label><input type="number" id="pin-rgb-r" value="23"></div>
+        <div class="field"><label>Green Pin</label><input type="number" id="pin-rgb-g" value="22"></div>
+        <div class="field"><label>Blue Pin</label><input type="number" id="pin-rgb-b" value="21"></div>
+      </div>
+      <div class="toggle-row" style="margin-top:.5rem">
+        <span class="toggle-label">Common Anode (most 4-pin RGB LEDs)</span>
+        <label class="toggle"><input type="checkbox" id="rgb-common-anode" checked><span class="toggle-track"></span></label>
+      </div>
+      <div class="hint">Common Anode = 4th pin to 3.3V. Common Cathode = 4th pin to GND. Each colour needs 220Ω.</div>
+    </div>
+  </div>
+
+  <div class="btn-row" style="margin-top:1.5rem">
+    <button class="btn btn-primary btn-full" style="padding:1rem;font-size:.95rem" onclick="goToFlash()">
+      Next — Connect &amp; Flash →
+    </button>
+  </div>
+
+  <div style="text-align:center;margin-top:1rem">
+    <button class="btn btn-ghost" onclick="goTo(5)" style="font-size:.72rem;opacity:.6;border-color:var(--border);color:var(--muted)">
+      ⬡ Serial Monitor
+    </button>
+  </div>
+
+  <p style="text-align:center;margin-top:2.5rem;font-family:var(--mono);font-size:.55rem;color:var(--muted);letter-spacing:.15em;line-height:2">
+    TALLY ARBITER ESP FLASHER &mdash; OPEN SOURCE &mdash; REQUIRES CHROME / EDGE
+  </p>
+</div>
+
+
+<!-- ═══════════════════════════════════════════
+     SCREEN 2 — Flash Firmware
+════════════════════════════════════════════ -->
+<div class="screen" id="screen-2">
+  <header>
+    <div class="logo-row">
+      <div class="tally-indicator"><div class="dot r"></div><div class="dot g"></div></div>
+      <h1>Tally Arbiter</h1>
+      <div class="tally-indicator"><div class="dot g"></div><div class="dot r"></div></div>
+    </div>
+    <div class="tagline">ESP Web Flasher &mdash; v1.1</div>
+  </header>
+
+  <div class="steps">
+    <div class="step done"><div class="step-num">✓</div><div class="step-label">Configure</div></div>
+    <div class="step-line"></div>
+    <div class="step active"><div class="step-num">2</div><div class="step-label">Flash</div></div>
+    <div class="step-line"></div>
+    <div class="step"><div class="step-num">3</div><div class="step-label">Send Config</div></div>
+    <div class="step-line"></div>
+    <div class="step"><div class="step-num">4</div><div class="step-label">Done</div></div>
+  </div>
+
+  <div class="card lit">
+    <div class="card-label">// Flash Firmware</div>
+
+    <div class="alert alert-warn" style="margin-bottom:1.25rem">
+      <span class="alert-icon">⚡</span>
+      <div>
+        <span id="flash-plug-hint">Plug your ESP32 in via USB, then click the button below.</span><br>
+        If it hangs at "Connecting…" hold the <strong>BOOT</strong> button on your <span class="board-name">ESP32</span> while clicking, release when it starts.
+      </div>
+    </div>
+
+    <div class="statusbar">
+      <span class="statusbar-left">Status</span>
+      <span id="flash-badge" class="badge badge-idle">Ready</span>
+    </div>
+
+    <button class="btn btn-primary btn-full" id="btn-flash" onclick="startFlash()" style="padding:1rem;font-size:1rem;margin-bottom:.5rem">
+      ▶ Connect &amp; Flash Firmware
+    </button>
+
+    <!-- Progress -->
+    <div class="progress-wrap" id="progress-wrap">
+      <div class="progress-header">
+        <span class="progress-label" id="progress-label"></span>
+        <span class="progress-pct" id="progress-pct">0%</span>
+      </div>
+      <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
+    </div>
+
+    <!-- Flash log -->
+    <div class="terminal" id="flash-log" style="height:200px">
+      <span class="log-dim">// Ready — click the button above to flash your ESP32.</span><br>
+    </div>
+  </div>
+
+  <!-- Advanced — collapsed by default -->
+  <details style="margin-top:.25rem">
+    <summary style="font-family:var(--mono);font-size:.62rem;letter-spacing:.2em;color:var(--muted);cursor:pointer;text-transform:uppercase;padding:.5rem 0;list-style:none;user-select:none">
+      ⚙ &nbsp;Advanced Options
+    </summary>
+    <div class="card" style="margin-top:.5rem">
+      <div class="card-label">// Recovery &amp; Config Tools</div>
+      <div class="hint" style="margin-bottom:1rem">Use these if you are recovering a broken device or updating settings without reflashing.</div>
+      <div class="btn-row" style="margin-top:0;flex-direction:column;gap:.5rem">
+        <button class="btn btn-ghost btn-full" onclick="sendConfigOnly()" style="border-color:var(--green);color:var(--green)">⟳ Send Config Only — no reflash</button>
+        <div class="btn-row" style="margin-top:0">
+          <button class="btn btn-ghost" onclick="eraseOnly()" style="flex:1;border-color:#ff9800;color:#ff9800">⚠ Erase Flash Only</button>
+          <button class="btn btn-ghost" onclick="startCleanFlash()" style="flex:1;border-color:#e040fb;color:#e040fb">☠ Erase + Flash Fresh</button>
+        </div>
+      </div>
+      <div class="hint" style="margin-top:.75rem;line-height:1.8">
+        <strong style="color:var(--green)">Send Config Only</strong> — sends WiFi &amp; TA settings to a device already running the firmware.<br>
+        <strong style="color:#ff9800">Erase Flash Only</strong> — wipes everything. Use when stuck in a reboot loop.<br>
+        <strong style="color:#e040fb">Erase + Flash Fresh</strong> — full chip erase then reflash from scratch.
+      </div>
+    </div>
+  </details>
+
+  <button class="btn btn-ghost" onclick="goTo(1)" style="margin-top:1rem;opacity:.5;font-size:.7rem">← Back to Settings</button>
+</div>
+
+
+<!-- ═══════════════════════════════════════════
+     SCREEN 3 — Send Config
+════════════════════════════════════════════ -->
+<div class="screen" id="screen-3">
+  <header>
+    <div class="logo-row">
+      <div class="tally-indicator"><div class="dot r"></div><div class="dot g"></div></div>
+      <h1>Tally Arbiter</h1>
+      <div class="tally-indicator"><div class="dot g"></div><div class="dot r"></div></div>
+    </div>
+    <div class="tagline">ESP Web Flasher &mdash; v1.1</div>
+  </header>
+
+  <div class="steps">
+    <div class="step done"><div class="step-num">✓</div><div class="step-label">Configure</div></div>
+    <div class="step-line"></div>
+    <div class="step done"><div class="step-num">✓</div><div class="step-label">Flash</div></div>
+    <div class="step-line"></div>
+    <div class="step active"><div class="step-num">3</div><div class="step-label">Send Config</div></div>
+    <div class="step-line"></div>
+    <div class="step"><div class="step-num">4</div><div class="step-label">Done</div></div>
+  </div>
+
+  <!-- ESP32 config panel (hidden for ESP8266) -->
+  <div id="sc-esp32-panel">
+    <div class="card lit">
+      <div class="card-label">// Send Config to Device</div>
+      <div class="alert alert-info" style="margin-bottom:1.5rem">
+        <span class="alert-icon">①</span>
+        <div>
+          Click <strong>Send Config</strong>, select the port, then <strong>immediately press EN/RST</strong> on the ESP32.<br>
+          The config is sent as the device boots — timing matters.
+        </div>
+      </div>
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:1rem 1.25rem;margin-bottom:1.5rem;font-family:var(--mono);font-size:.7rem;line-height:2.2">
+        <div style="display:flex;justify-content:space-between;border-bottom:1px solid var(--border);padding-bottom:.4rem;margin-bottom:.4rem">
+          <span style="color:var(--muted);letter-spacing:.12em;text-transform:uppercase">WiFi</span>
+          <span id="sc-ssid" style="color:var(--text)">—</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;border-bottom:1px solid var(--border);padding-bottom:.4rem;margin-bottom:.4rem">
+          <span style="color:var(--muted);letter-spacing:.12em;text-transform:uppercase">TA Server</span>
+          <span id="sc-host" style="color:var(--text)">—</span>
+        </div>
+        <div style="display:flex;justify-content:space-between">
+          <span style="color:var(--muted);letter-spacing:.12em;text-transform:uppercase">Listener</span>
+          <span id="sc-lname" style="color:var(--text)">—</span>
+        </div>
+      </div>
+      <button class="btn btn-green btn-full" id="btn-sendcfg" onclick="doSendConfig()" style="padding:1rem;font-size:1rem;margin-bottom:1rem">
+        ▶ Send Config to Device
+      </button>
+      <div id="sc-status" style="font-family:var(--mono);font-size:.72rem;min-height:1.5rem;margin-bottom:.5rem;text-align:center"></div>
+      <div class="terminal" id="cfg-log" style="height:180px">
+        <span class="log-dim">// Waiting — click the button above to send config.</span><br>
+      </div>
+    </div>
+  </div>
+
+  <!-- ESP8266 web UI instructions panel (hidden for ESP32) -->
+  <div id="sc-esp8266-panel" style="display:none">
+    <div class="card lit">
+      <div class="card-label">// Configure via Web UI</div>
+      <div class="alert alert-info" style="margin-bottom:1.5rem">
+        <span class="alert-icon">✓</span>
+        <div>
+          Firmware flashed with your WiFi &amp; TA settings baked in. The device will connect automatically on boot.
+        </div>
+      </div>
+
+      <div style="font-family:var(--mono);font-size:.75rem;line-height:2.2;margin-bottom:1.5rem">
+        <div style="color:var(--green);margin-bottom:.75rem;font-size:.8rem">What to expect:</div>
+
+        <div style="display:flex;gap:.75rem;align-items:flex-start;margin-bottom:.75rem">
+          <span style="color:var(--red);min-width:1.4rem">① </span>
+          <span>Device boots — LED blinks <strong style="color:#2979ff">blue</strong> while connecting to <strong style="color:var(--green)" id="sc8-ssid-hint">your-ssid</strong>. (2-pin: red/green alternating)</span>
+        </div>
+        <div style="display:flex;gap:.75rem;align-items:flex-start;margin-bottom:.75rem">
+          <span style="color:var(--red);min-width:1.4rem">② </span>
+          <span>Once connected LEDs go off. Use the <strong>Serial Monitor</strong> below — connect the port and press <strong>EN/RST</strong> to see the device IP address.</span>
+        </div>
+        <div style="display:flex;gap:.75rem;align-items:flex-start;margin-bottom:.75rem">
+          <span style="color:var(--red);min-width:1.4rem">③ </span>
+          <span>Browse to that IP to access the device web UI — update any settings and save.</span>
+        </div>
+        <div style="display:flex;gap:.75rem;align-items:flex-start">
+          <span style="color:var(--red);min-width:1.4rem">④ </span>
+          <span>LEDs respond to tally state — <span style="color:var(--red)">■ Red = Program</span>, <span style="color:var(--green)">■ Green = Preview</span>, <span style="color:#2979ff">■ Blue = Connecting</span>.</span>
+        </div>
+      </div>
+
+      <!-- Serial monitor embedded in screen 3 -->
+      <div style="margin-top:1.25rem">
+        <div style="font-family:var(--mono);font-size:.6rem;letter-spacing:.18em;text-transform:uppercase;color:var(--red);margin-bottom:.6rem;display:flex;align-items:center;gap:8px">
+          // Serial Monitor
+          <span style="flex:1;height:1px;background:var(--border);display:block"></span>
+        </div>
+        <div style="display:flex;gap:.5rem;margin-bottom:.5rem;align-items:center;flex-wrap:wrap">
+          <select id="sc3-baud" style="background:var(--bg2);border:1px solid var(--border2);color:var(--text);font-family:var(--mono);font-size:.65rem;padding:.3rem .5rem;border-radius:3px">
+            <option value="9600">9600</option>
+            <option value="115200" selected>115200</option>
+            <option value="921600">921600</option>
+          </select>
+          <button class="btn btn-ghost" id="btn-sc3-connect" onclick="sc3Connect()" style="padding:.3rem .8rem;font-size:.7rem">⬡ Connect</button>
+          <button class="btn btn-ghost" id="btn-sc3-disconnect" onclick="sc3Disconnect()" style="padding:.3rem .8rem;font-size:.7rem;display:none">✕ Disconnect</button>
+          <button class="btn btn-ghost" onclick="sc3Clear()" style="padding:.3rem .8rem;font-size:.7rem">⌫ Clear</button>
+        </div>
+        <div class="monitor-box" id="sc3-terminal" style="height:220px">// Connect to see device output — press EN/RST after connecting.
+</div>
+      </div>
+
+      <button class="btn btn-green btn-full" onclick="goToDone(savedCfg)" style="padding:1rem;font-size:1rem;margin-top:1.25rem">
+        ✓ Done — Device is Running
+      </button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════
+     SCREEN 4 — Done
+════════════════════════════════════════════ -->
+<div class="screen" id="screen-4" style="text-align:center">
+  <header>
+    <div class="logo-row">
+      <div class="tally-indicator"><div class="dot r"></div><div class="dot g"></div></div>
+      <h1>Tally Arbiter</h1>
+      <div class="tally-indicator"><div class="dot g"></div><div class="dot r"></div></div>
+    </div>
+    <div class="tagline">ESP Web Flasher &mdash; v1.1</div>
+  </header>
+
+  <div class="steps">
+    <div class="step done"><div class="step-num">✓</div><div class="step-label">Configure</div></div>
+    <div class="step-line"></div>
+    <div class="step done"><div class="step-num">✓</div><div class="step-label">Flash</div></div>
+    <div class="step-line"></div>
+    <div class="step done"><div class="step-num">✓</div><div class="step-label">Send Config</div></div>
+    <div class="step-line"></div>
+    <div class="step active"><div class="step-num">4</div><div class="step-label">Done</div></div>
+  </div>
+
+  <div class="big-tick">✓</div>
+  <div class="done-title">Device Ready</div>
+  <div class="done-sub">Your <span class="board-name">ESP32</span> tally listener is flashed and configured.</div>
+
+  <!-- Summary -->
+  <div style="background:var(--panel);border:1px solid var(--border);border-radius:4px;padding:1rem 1.5rem;margin-bottom:1.5rem;text-align:left;font-family:var(--mono);font-size:.7rem;line-height:2.4">
+    <div style="display:flex;justify-content:space-between;border-bottom:1px solid var(--border);padding-bottom:.4rem;margin-bottom:.4rem">
+      <span style="color:var(--muted);text-transform:uppercase;letter-spacing:.12em">WiFi Network</span>
+      <span id="done-ssid" style="color:var(--text)">—</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;border-bottom:1px solid var(--border);padding-bottom:.4rem;margin-bottom:.4rem">
+      <span style="color:var(--muted);text-transform:uppercase;letter-spacing:.12em">Tally Arbiter</span>
+      <span id="done-host" style="color:var(--text)">—</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;border-bottom:1px solid var(--border);padding-bottom:.4rem;margin-bottom:.4rem">
+      <span style="color:var(--muted);text-transform:uppercase;letter-spacing:.12em">Listener Name</span>
+      <span id="done-lname" style="color:var(--text)">—</span>
+    </div>
+    <div style="display:flex;justify-content:space-between">
+      <span style="color:var(--muted);text-transform:uppercase;letter-spacing:.12em">LED Type</span>
+      <span id="done-led" style="color:var(--text)">—</span>
+    </div>
+  </div>
+
+  <div class="alert alert-green" style="text-align:left;margin-bottom:2rem">
+    <span class="alert-icon">●</span>
+    <div>
+      <strong>LED status:</strong><br>
+      Alternating Red/Green = connecting to WiFi<br>
+      Solid Green = connected to Tally Arbiter and listening
+    </div>
+  </div>
+
+  <!-- Serial monitor — the only interactive element on this screen -->
+  <div class="card lit" style="text-align:left">
+    <div class="card-label">// Live Serial Output</div>
+    <p style="font-family:var(--mono);font-size:.68rem;color:var(--muted);margin-bottom:1rem;line-height:1.7">
+      Connect the serial monitor to watch your device boot and join the network. Press <strong>EN/RST</strong> on the <span class="board-name">ESP32</span> to trigger a fresh boot log.
+    </p>
+    <div style="display:flex;gap:.5rem;align-items:center;margin-bottom:.75rem;flex-wrap:wrap">
+      <button class="btn btn-ghost" id="btn-mon-connect" onclick="monConnect()" style="flex:1;min-width:0;font-size:.72rem">⬡ Connect Monitor</button>
+      <button class="btn btn-ghost" id="btn-mon-disconnect" onclick="monDisconnect()" disabled style="border-color:#e05;color:#e05;flex:1;min-width:0;font-size:.72rem">✕ Disconnect</button>
+      <button class="btn btn-ghost" onclick="monClear()" style="min-width:60px;font-size:.72rem">⌫</button>
+      <span id="mon-badge" class="badge badge-idle" style="margin-left:auto">Disconnected</span>
+    </div>
+    <div class="monitor-box" id="mon-terminal">// Connect to see live device output.
+</div>
+  </div>
+
+  <div class="btn-row" style="justify-content:center;margin-top:2rem">
+    <button class="btn btn-ghost" onclick="startOver()">← Flash Another Device</button>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════
+     SCREEN 5 — Serial Monitor
+════════════════════════════════════════════ -->
+<div class="screen" id="screen-5">
+  <header>
+    <div class="logo-row">
+      <div class="tally-indicator"><div class="dot r"></div><div class="dot g"></div></div>
+      <h1>Tally Arbiter</h1>
+      <div class="tally-indicator"><div class="dot g"></div><div class="dot r"></div></div>
+    </div>
+    <div class="tagline">ESP Web Flasher &mdash; v1.1</div>
+  </header>
+
+  <div class="card lit">
+    <div class="card-label">// Serial Monitor</div>
+    <p style="font-family:var(--mono);font-size:.68rem;color:var(--muted);line-height:1.7;margin-bottom:1.25rem">
+      Connect your <span class="board-name">ESP32</span> via USB and press <strong style="color:var(--text)">EN/RST</strong> to see its boot log, IP address, and live status output.
+    </p>
+
+    <div style="display:flex;gap:.5rem;align-items:center;margin-bottom:.75rem;flex-wrap:wrap">
+      <button class="btn btn-ghost" id="btn-sm-connect" onclick="smConnect()" style="flex:1">⬡ Connect</button>
+      <button class="btn btn-ghost" id="btn-sm-disconnect" onclick="smDisconnect()" disabled style="border-color:#e05;color:#e05;flex:1">✕ Disconnect</button>
+      <button class="btn btn-ghost" onclick="smClear()" style="padding:.75rem 1rem">⌫ Clear</button>
+      <select id="sm-baud" style="font-family:var(--mono);font-size:.7rem;background:var(--bg2);color:var(--text);border:1px solid var(--border2);border-radius:3px;padding:.5rem .6rem">
+        <option value="9600">9600</option>
+        <option value="115200" selected>115200</option>
+        <option value="921600">921600</option>
+      </select>
+      <span id="sm-badge" class="badge badge-idle" style="margin-left:auto">Disconnected</span>
+    </div>
+
+    <div class="monitor-box" id="sm-terminal">// Connect your device and press EN/RST to see output.
+</div>
+  </div>
+
+  <button class="btn btn-ghost" onclick="smDisconnect();goTo(1)" style="margin-top:.5rem;opacity:.5;font-size:.7rem">← Back</button>
+</div>
+
+<script>
+// ─────────────────────────────────────
+//  State
+// ─────────────────────────────────────
+var serialPort  = null;
+var isFlashing  = false;
+var savedCfg    = null;
+var savedPort   = null; // raw port stashed after flash for auto-reuse
+
+var monPort   = null;
+var monReader = null;
+var monActive = false;
+
+// ─────────────────────────────────────
+//  Init
+// ─────────────────────────────────────
+window.addEventListener('DOMContentLoaded', function() {
+  if (!('serial' in navigator)) {
+    document.getElementById('browser-warn').style.display = 'block';
+    document.querySelectorAll('.screen').forEach(function(s){ s.style.display='none'; });
+    return;
+  }
+  setBoard('esp32'); // sets placeholder, pin defaults, hint
+  loadHostHistory();
+});
+
+// ─────────────────────────────────────
+//  Navigation
+// ─────────────────────────────────────
+function goTo(n) {
+  document.querySelectorAll('.screen').forEach(function(s){ s.classList.remove('active'); });
+  document.getElementById('screen-' + n).classList.add('active');
+  window.scrollTo(0, 0);
 }
 
-/* ════════════════════════════════════════
-   LED CONTROL
-   ════════════════════════════════════════ */
-
-// GPIO16 (D0) on ESP8266 is special — it has no internal pull-up and can
-// float high on boot. Always re-assert pinMode before writing to be safe.
-void initLEDPins() {
-  pinMode(pinRed,   OUTPUT); digitalWrite(pinRed,   LOW);
-  pinMode(pinGreen, OUTPUT); digitalWrite(pinGreen, LOW);
-  if (USE_RGB) { pinMode(pinBlue, OUTPUT); digitalWrite(pinBlue, USE_RGB && RGB_ANODE ? HIGH : LOW); }
+function goToFlash() {
+  var cfg = getConfig();
+  if (cfg.errors.length > 0) { alert(cfg.errors.join('\n')); return; }
+  saveHostHistory();
+  goTo(2);
 }
 
-void setLEDs(bool red, bool green, bool blue = false) {
-  if (USE_RGB) {
-    if (RGB_ANODE) {
-      // Common Anode (3.3V on common): LOW = on, HIGH = off
-      digitalWrite(pinRed,   red   ? LOW  : HIGH);
-      digitalWrite(pinGreen, green ? LOW  : HIGH);
-      digitalWrite(pinBlue,  blue  ? LOW  : HIGH);
-    } else {
-      // Common Cathode (GND on common): HIGH = on, LOW = off
-      digitalWrite(pinRed,   red   ? HIGH : LOW);
-      digitalWrite(pinGreen, green ? HIGH : LOW);
-      digitalWrite(pinBlue,  blue  ? HIGH : LOW);
-    }
+// ─────────────────────────────────────
+//  Helpers
+// ─────────────────────────────────────
+function delay(ms){ return new Promise(function(r){ setTimeout(r,ms); }); }
+
+function toggleStatic() {
+  document.getElementById('static-fields').style.display =
+    document.getElementById('use-static').checked ? 'block' : 'none';
+}
+
+function setLedType(type) {
+  var is2 = type === '2pin';
+  document.getElementById('pins-2pin').style.display = is2 ? 'block' : 'none';
+  document.getElementById('pins-rgb').style.display  = is2 ? 'none'  : 'block';
+  document.getElementById('btn-led-2pin').style.borderColor = is2 ? 'var(--red)' : '';
+  document.getElementById('btn-led-2pin').style.color       = is2 ? 'var(--red)' : '';
+  document.getElementById('btn-led-rgb').style.borderColor  = is2 ? '' : 'var(--red)';
+  document.getElementById('btn-led-rgb').style.color        = is2 ? '' : 'var(--red)';
+}
+
+function flashLog(msg, type) {
+  _appendLog('flash-log', msg, type);
+}
+function cfgLog(msg, type) {
+  _appendLog('cfg-log', msg, type);
+}
+function _appendLog(id, msg, type) {
+  type = type || 'info';
+  var t = document.getElementById(id);
+  var s = document.createElement('span');
+  s.className = 'log-' + type;
+  s.textContent = '[' + new Date().toTimeString().slice(0,8) + '] ' + msg;
+  t.appendChild(s);
+  t.appendChild(document.createElement('br'));
+  t.scrollTop = t.scrollHeight;
+}
+
+function setProgress(pct, label) {
+  document.getElementById('progress-wrap').classList.add('show');
+  var fill = document.getElementById('progress-fill');
+  fill.style.width = pct + '%';
+  if (pct >= 100) fill.classList.add('done'); else fill.classList.remove('done');
+  document.getElementById('progress-label').textContent = label || '';
+  document.getElementById('progress-pct').textContent   = Math.round(pct) + '%';
+}
+
+function setFlashBadge(txt, type) {
+  var b = document.getElementById('flash-badge');
+  b.className = 'badge badge-' + type;
+  b.textContent = txt;
+}
+
+function setSCStatus(msg, type) {
+  var el = document.getElementById('sc-status');
+  var colours = { ok: 'var(--green)', error: 'var(--red)', warn: 'var(--amber)' };
+  el.style.color = colours[type] || 'var(--muted)';
+  el.textContent = msg;
+}
+
+// ─────────────────────────────────────
+//  Config
+// ─────────────────────────────────────
+function loadHostHistory() {
+  try {
+    var saved = JSON.parse(localStorage.getItem('ta-host-history') || '[]');
+    var dl = document.getElementById('ta-host-history');
+    dl.innerHTML = '';
+    saved.forEach(function(ip){
+      var o = document.createElement('option'); o.value = ip; dl.appendChild(o);
+    });
+    if (saved.length > 0) document.getElementById('ta-host').value = saved[0];
+  } catch(_){}
+}
+function saveHostHistory() {
+  try {
+    var ip = document.getElementById('ta-host').value.trim();
+    if (!ip) return;
+    var saved = JSON.parse(localStorage.getItem('ta-host-history') || '[]');
+    saved = [ip].concat(saved.filter(function(x){ return x !== ip; })).slice(0,10);
+    localStorage.setItem('ta-host-history', JSON.stringify(saved));
+    loadHostHistory();
+  } catch(_){}
+}
+
+var selectedBoard = 'esp32'; // 'esp32' or 'esp8266'
+
+function setBoard(b) {
+  selectedBoard = b;
+  var is32  = b === 'esp32';
+  var btn32  = document.getElementById('btn-board-esp32');
+  var btn86  = document.getElementById('btn-board-esp8266');
+  btn32.style.borderColor  = is32  ? 'var(--red)' : 'var(--border2)';
+  btn32.style.color        = is32  ? 'var(--red)' : 'var(--muted)';
+  btn86.style.borderColor  = !is32 ? 'var(--red)' : 'var(--border2)';
+  btn86.style.color        = !is32 ? 'var(--red)' : 'var(--muted)';
+
+  // Update all .board-name spans and dynamic hints
+  updateBoardNames(is32 ? 'ESP32' : 'ESP8266');
+
+  document.getElementById('board-hint').textContent = is32
+    ? 'ESP32 DevKit — 30/38 pin board. Use BOOT + EN/RST to enter flash mode if needed.'
+    : 'ESP8266 / D1 Mini / NodeMCU. Pins: D0=Red, D2=Green, D1=Blue. 3.3V=Common Anode.';
+
+  // Update pin defaults
+  if (is32) {
+    document.getElementById('pin-red').value   = 23;
+    document.getElementById('pin-green').value = 22;
+    document.getElementById('pin-rgb-r').value = 23;
+    document.getElementById('pin-rgb-g').value = 22;
+    document.getElementById('pin-rgb-b').value = 21;
+    document.getElementById('pin-2pin-hint').textContent = 'Two separate LEDs, each with a 220Ω resistor to GND.';
   } else {
-    // 2-pin: red and green only
-    digitalWrite(pinRed,   red   ? HIGH : LOW);
-    digitalWrite(pinGreen, green ? HIGH : LOW);
+    document.getElementById('pin-red').value   = 16; // D0
+    document.getElementById('pin-green').value = 4;  // D2
+    document.getElementById('pin-rgb-r').value = 16; // D0
+    document.getElementById('pin-rgb-g').value = 4;  // D2
+    document.getElementById('pin-rgb-b').value = 5;  // D1
+    document.getElementById('pin-2pin-hint').textContent = 'D0 (GPIO16) = Red, D2 (GPIO4) = Green. 220Ω resistor each.';
   }
+
+  // Update listener name placeholder
+  document.getElementById('listener-name').placeholder =
+    (is32 ? 'esp32' : 'esp8266') + '-tally-' + Math.floor(Math.random()*9000+1000);
 }
 
-void evaluateMode() {
-  if (mode_preview && !mode_program) {
-    addLog("Tally: PREVIEW");
-    setLEDs(false, true, false);
-  } else if (!mode_preview && mode_program) {
-    addLog("Tally: PROGRAM");
-    setLEDs(true, false, false);
-  } else if (mode_preview && mode_program) {
-    addLog("Tally: PREVIEW+PROGRAM");
-    setLEDs(true, CUT_BUS ? false : true, false);
+function getConfig() {
+  var ssid      = document.getElementById('wifi-ssid').value.trim();
+  var pass      = document.getElementById('wifi-pass').value;
+  var taHost    = document.getElementById('ta-host').value.trim();
+  var taPort    = parseInt(document.getElementById('ta-port').value) || 4455;
+  var lName     = document.getElementById('listener-name').value.trim() ||
+                  (selectedBoard + '-' + Date.now().toString(16).slice(-6));
+  var cutBus    = document.getElementById('cut-bus').checked;
+  var ledType   = document.getElementById('pins-rgb').style.display === 'none' ? '2pin' : 'rgb';
+  var pinRed    = parseInt(document.getElementById('pin-red').value)   || (selectedBoard === 'esp8266' ? 16 : 23);
+  var pinGreen  = parseInt(document.getElementById('pin-green').value) || (selectedBoard === 'esp8266' ? 4  : 22);
+  var pinRgbR   = parseInt(document.getElementById('pin-rgb-r').value) || (selectedBoard === 'esp8266' ? 16 : 23);
+  var pinRgbG   = parseInt(document.getElementById('pin-rgb-g').value) || (selectedBoard === 'esp8266' ? 4  : 22);
+  var pinRgbB   = parseInt(document.getElementById('pin-rgb-b').value) || (selectedBoard === 'esp8266' ? 5  : 21);
+  var rgbAnode  = document.getElementById('rgb-common-anode').checked;
+  var useStatic = document.getElementById('use-static').checked;
+  var staticIp  = document.getElementById('static-ip').value.trim()  || '192.168.1.100';
+  var staticGw  = document.getElementById('static-gw').value.trim()  || '192.168.1.1';
+  var staticSn  = document.getElementById('static-sn').value.trim()  || '255.255.255.0';
+  var errors = [];
+  if (!ssid)   errors.push('WiFi SSID is required.');
+  if (!taHost) errors.push('Tally Arbiter Server IP is required.');
+  return { board: selectedBoard,
+           ssid, pass, taHost, taPort, lName, devId:'unassigned', cutBus,
+           ledType, pinRed, pinGreen, pinRgbR, pinRgbG, pinRgbB, rgbAnode,
+           useStatic, staticIp, staticGw, staticSn, errors };
+}
+
+function buildCFGPacket(cfg) {
+  var obj = {
+    ssid: cfg.ssid, pass: cfg.pass,
+    tahost: cfg.taHost, taport: cfg.taPort,
+    lname: cfg.lName, devid: cfg.devId,
+    cutbus: cfg.cutBus ? 1 : 0,
+    ledtype: cfg.ledType,
+    rgbanode: cfg.rgbAnode ? 1 : 0,
+    'static': cfg.useStatic ? 1 : 0,
+    sip: cfg.staticIp, sgw: cfg.staticGw, ssn: cfg.staticSn
+  };
+  if (cfg.board === 'esp8266') {
+    // ESP8266 uses pinb (not pinrgbb) and GPIO numbers D0/D1/D2
+    obj.pinr    = cfg.pinRed;
+    obj.ping    = cfg.pinGreen;
+    obj.pinb    = cfg.pinRgbB;
+    obj.pinrgbr = cfg.pinRgbR;
+    obj.pinrgbg = cfg.pinRgbG;
+    obj.pinrgbb = cfg.pinRgbB;
   } else {
-    addLog("Tally: CLEAR");
-    setLEDs(false, false, false);
+    obj.pinr    = cfg.pinRed;
+    obj.ping    = cfg.pinGreen;
+    obj.pinrgbr = cfg.pinRgbR;
+    obj.pinrgbg = cfg.pinRgbG;
+    obj.pinrgbb = cfg.pinRgbB;
   }
+  return 'CFG:' + JSON.stringify(obj) + '\n';
 }
 
-/* ════════════════════════════════════════
-   CONFIG — LittleFS JSON storage
-   ════════════════════════════════════════ */
-#define CONFIG_FILE "/config.json"
+// ─────────────────────────────────────
+//  Binary patcher — finds placeholder strings in firmware and overwrites in place
+//  Placeholders must be longer than any real value and null-terminated in the binary
+// ─────────────────────────────────────
+function patchFirmwareBinary(buf, replacements) {
+  var bytes = new Uint8Array(buf.slice(0)); // copy
+  var enc   = new TextEncoder();
 
-void saveConfig() {
-  File f = LittleFS.open(CONFIG_FILE, "w");
-  if (!f) { Serial.println("Config write failed"); return; }
-
-  StaticJsonDocument<1024> doc;
-  doc["ssid"]     = networkSSID;
-  doc["pass"]     = networkPass;
-  doc["tahost"]   = tallyarbiter_host;
-  doc["taport"]   = tallyarbiter_port;
-  doc["lname"]    = listenerDeviceName;
-  doc["devid"]    = DeviceId;
-  doc["cutbus"]   = CUT_BUS   ? 1 : 0;
-  doc["ledtype"]  = USE_RGB   ? "rgb" : "2pin";
-  doc["rgbanode"] = RGB_ANODE ? 1 : 0;
-  doc["pinr"]     = pinRed;
-  doc["ping"]     = pinGreen;
-  doc["pinb"]     = pinBlue;
-  doc["static"]   = USE_STATIC ? 1 : 0;
-  doc["sip"]      = clientIp.toString();
-  doc["sgw"]      = gateway.toString();
-  doc["ssn"]      = subnet.toString();
-
-  serializeJson(doc, f);
-  f.close();
-  Serial.println("Config saved to LittleFS.");
-}
-
-bool loadConfig() {
-  if (!LittleFS.exists(CONFIG_FILE)) return false;
-  File f = LittleFS.open(CONFIG_FILE, "r");
-  if (!f) return false;
-
-  StaticJsonDocument<1024> doc;
-  DeserializationError err = deserializeJson(doc, f);
-  f.close();
-  if (err) { Serial.println("Config parse error: " + String(err.c_str())); return false; }
-
-  if (doc.containsKey("ssid"))     networkSSID         = doc["ssid"].as<String>();
-  if (doc.containsKey("pass"))     networkPass         = doc["pass"].as<String>();
-  if (doc.containsKey("tahost"))   tallyarbiter_host   = doc["tahost"].as<String>();
-  if (doc.containsKey("taport"))   tallyarbiter_port   = doc["taport"].as<int>();
-  if (doc.containsKey("lname"))    listenerDeviceName  = doc["lname"].as<String>();
-  if (doc.containsKey("devid")) {
-    String d = doc["devid"].as<String>();
-    // Sanity check — valid IDs are hex strings like "9a15a435", reject short/corrupt values
-    if (d.length() >= 6) DeviceId = d;
-    else DeviceId = "unassigned";
-  }
-  if (doc.containsKey("cutbus"))   CUT_BUS             = doc["cutbus"].as<int>() == 1;
-  if (doc.containsKey("ledtype"))  USE_RGB             = doc["ledtype"].as<String>() == "rgb";
-  if (doc.containsKey("rgbanode")) RGB_ANODE           = doc["rgbanode"].as<int>() == 1;
-  if (doc.containsKey("pinr"))     pinRed              = doc["pinr"].as<int>();
-  if (doc.containsKey("ping"))     pinGreen            = doc["ping"].as<int>();
-  if (doc.containsKey("pinb"))     pinBlue             = doc["pinb"].as<int>();
-  if (doc.containsKey("static"))   USE_STATIC          = doc["static"].as<int>() == 1;
-  if (doc.containsKey("sip"))      clientIp.fromString(doc["sip"].as<String>());
-  if (doc.containsKey("sgw"))      gateway.fromString (doc["sgw"].as<String>());
-  if (doc.containsKey("ssn"))      subnet.fromString  (doc["ssn"].as<String>());
-
-  return true;
-}
-
-/* ════════════════════════════════════════
-   SERIAL CONFIG RECEIVER
-   Non-blocking — accumulates bytes into a buffer,
-   processes when a full line ending in \n arrives.
-   ════════════════════════════════════════ */
-String serialLineBuffer = "";
-
-void checkSerialConfig() {
-  while (Serial.available()) {
-    char c = Serial.read();
-    if (c == '\n') {
-      String line = serialLineBuffer;
-      serialLineBuffer = "";
-      line.trim();
-      if (!line.startsWith("CFG:")) continue;
-
-      String json = line.substring(4);
-      Serial.println("CFG raw (" + String(json.length()) + " bytes): " + json);
-
-      StaticJsonDocument<1024> cfg;
-      DeserializationError err = deserializeJson(cfg, json);
-      if (err) { Serial.println("CFG parse error: " + String(err.c_str())); continue; }
-
-      Serial.println("CFG received — saving...");
-
-      if (cfg.containsKey("ssid"))     networkSSID        = cfg["ssid"].as<String>();
-      if (cfg.containsKey("pass"))     networkPass        = cfg["pass"].as<String>();
-      if (cfg.containsKey("tahost"))   tallyarbiter_host  = cfg["tahost"].as<String>();
-      if (cfg.containsKey("taport"))   tallyarbiter_port  = cfg["taport"].as<int>();
-      if (cfg.containsKey("lname"))    listenerDeviceName = cfg["lname"].as<String>();
-      if (cfg.containsKey("devid"))    DeviceId           = cfg["devid"].as<String>();
-      if (cfg.containsKey("cutbus"))   CUT_BUS            = cfg["cutbus"].as<int>() == 1;
-      if (cfg.containsKey("ledtype"))  USE_RGB            = cfg["ledtype"].as<String>() == "rgb";
-      if (cfg.containsKey("rgbanode")) RGB_ANODE          = cfg["rgbanode"].as<int>() == 1;
-      if (cfg.containsKey("pinr"))     pinRed             = cfg["pinr"].as<int>();
-      if (cfg.containsKey("ping"))     pinGreen           = cfg["ping"].as<int>();
-      if (cfg.containsKey("pinb"))     pinBlue            = cfg["pinb"].as<int>();
-      if (cfg.containsKey("static"))   USE_STATIC         = cfg["static"].as<int>() == 1;
-      if (cfg.containsKey("sip"))      clientIp.fromString(cfg["sip"].as<String>());
-      if (cfg.containsKey("sgw"))      gateway.fromString (cfg["sgw"].as<String>());
-      if (cfg.containsKey("ssn"))      subnet.fromString  (cfg["ssn"].as<String>());
-
-      saveConfig();
-      Serial.println("CFG saved. Rebooting...");
-      delay(500);
-      ESP.restart();
-    } else if (c != '\r') {
-      serialLineBuffer += c;
-      // Prevent buffer overflow
-      if (serialLineBuffer.length() > 1200) serialLineBuffer = "";
+  replacements.forEach(function(r) {
+    var needle  = enc.encode(r.placeholder);
+    var value   = enc.encode(r.value);
+    if (value.length > needle.length) {
+      throw new Error('Value "' + r.value + '" is too long for placeholder "' + r.placeholder + '" (' + value.length + ' > ' + needle.length + ')');
     }
-  }
-}
 
-/* ════════════════════════════════════════
-   TALLY LOGIC
-   ════════════════════════════════════════ */
-String getBusTypeById(const String& busId) {
-  for (JsonObject bus : BusOptions.as<JsonArray>()) {
-    if (bus["id"].as<String>() == busId)
-      return bus["type"].as<String>();
-  }
-  return "invalid";
-}
-
-void processTallyData() {
-  mode_preview = false;
-  mode_program = false;
-  for (JsonObject state : DeviceStates.as<JsonArray>()) {
-    String stateDevId = state["deviceId"].as<String>();
-    if (stateDevId != DeviceId) continue;
-    String busType = getBusTypeById(state["busId"].as<String>());
-    bool active = state["sources"].as<JsonArray>().size() > 0;
-    if (busType == "preview") mode_preview = active;
-    if (busType == "program") mode_program = active;
-  }
-  evaluateMode();
-}
-
-void SetDeviceName() {
-  for (JsonObject dev : Devices.as<JsonArray>()) {
-    if (dev["id"].as<String>() == DeviceId) {
-      DeviceName = dev["name"].as<String>();
-      break;
-    }
-  }
-  addLog("Device: " + DeviceName + " (" + DeviceId + ")");
-  // Persist updated device name
-  saveConfig();
-}
-
-/* ════════════════════════════════════════
-   SOCKET.IO
-   ════════════════════════════════════════ */
-void ws_emit(const char* event, const char* payload = nullptr) {
-  String msg = payload
-    ? String("[\"") + event + "\"," + payload + "]"
-    : String("[\"") + event + "\"]";
-  addLog("TX: " + msg.substring(0, 80));
-  socket.sendEVENT(msg);
-}
-
-void doRegister() {
-  String payload = "{"
-    "\"deviceId\":\"" + DeviceId + "\","
-    "\"listenerType\":\"" + listenerDeviceName + "\","
-    "\"canBeReassigned\":true,"
-    "\"canBeFlashed\":true,"
-    "\"supportsChat\":false"
-    "}";
-  ws_emit("listenerclient_connect", payload.c_str());
-}
-
-void socketEvent(socketIOmessageType_t type, uint8_t* payload, size_t length) {
-  switch (type) {
-
-    case sIOtype_CONNECT:
-      addLog("Socket.IO connected.");
-      // Don't manually send namespace packet — TA handles connection on EIO=3
-      socketConnected = true;
-      pendingRegister = true;
-      break;
-
-    case sIOtype_DISCONNECT:
-      addLog("Socket.IO disconnected.");
-      socketConnected = false;
-      setLEDs(false, false);
-      break;
-
-    case sIOtype_EVENT: {
-      // Raw data looks like: ["event_name", <payload>]
-      // We extract the event name cheaply, then deserialize the payload
-      // directly into our pre-allocated documents — no tiny envelope doc.
-      String data = String((char*)payload);
-
-      // Extract event name: first string after opening ["
-      int nameStart = data.indexOf('"');
-      if (nameStart < 0) break;
-      int nameEnd = data.indexOf('"', nameStart + 1);
-      if (nameEnd < 0) break;
-      String event = data.substring(nameStart + 1, nameEnd);
-      addLog("RX: " + event);
-
-      // Find where the payload starts (after the event name + comma)
-      // data = ["event_name",<payload>]
-      int payloadStart = data.indexOf(',', nameEnd);
-      if (payloadStart < 0) break;
-      payloadStart++; // skip the comma
-      // Trim the trailing ] from the Socket.IO envelope
-      int payloadEnd = data.lastIndexOf(']');
-      if (payloadEnd <= payloadStart) break;
-      String payloadStr = data.substring(payloadStart, payloadEnd);
-      payloadStr.trim();
-
-      // ── bus_options ──
-      if (event == "bus_options") {
-        BusOptions.clear();
-        DeserializationError e = deserializeJson(BusOptions, payloadStr);
-        if (!e) addLog("bus_options OK (" + String(BusOptions.as<JsonArray>().size()) + ")");
-        else    addLog("bus_options ERR: " + String(e.c_str()));
-
-      // ── devices ──
-      } else if (event == "devices") {
-        Devices.clear();
-        DeserializationError e = deserializeJson(Devices, payloadStr);
-        if (!e) { SetDeviceName(); }
-        else    addLog("devices ERR: " + String(e.c_str()));
-
-      // ── device_states ──
-      } else if (event == "device_states") {
-        DeviceStates.clear();
-        DeserializationError e = deserializeJson(DeviceStates, payloadStr);
-        if (!e) {
-          addLog("device_states OK (" + String(DeviceStates.as<JsonArray>().size()) + ")");
-          processTallyData();
-        } else {
-          addLog("device_states ERR: " + String(e.c_str()));
-        }
-
-      // ── reassign ──
-      // TA sends: ["reassign","oldDeviceId","newDeviceId","listenerClientId"]
-      } else if (event == "reassign") {
-        addLog("Reassign raw: " + data.substring(0, 80));
-        // data = ["reassign","oldId","newId","listenerId"]
-        // Find the 4 quoted string values by counting through quote pairs
-        // Pair 0 = "reassign", Pair 1 = oldId, Pair 2 = newId, Pair 3 = listenerId
-        int pos = 0;
-        String tokens[4];
-        int found = 0;
-        while (found < 4 && pos < (int)data.length()) {
-          int qs = data.indexOf('"', pos);
-          if (qs < 0) break;
-          int qe = data.indexOf('"', qs + 1);
-          if (qe < 0) break;
-          tokens[found++] = data.substring(qs + 1, qe);
-          pos = qe + 1;
-        }
-        if (found >= 3) {
-          // tokens[0]="reassign", tokens[1]=oldId, tokens[2]=newId
-          String oldId = tokens[1];
-          String newId = tokens[2];
-          addLog("Reassign: " + oldId + " -> " + newId);
-          DeviceId = newId;
-          saveConfig();
-          String rPayload = "{"
-            "\"oldDeviceId\":\"" + oldId + "\","
-            "\"newDeviceId\":\"" + newId + "\""
-            "}";
-          ws_emit("listener_reassign_object", rPayload.c_str());
-          ws_emit("devices");
-        } else {
-          addLog("Reassign: could not parse (" + String(found) + " tokens)");
-        }
-
-      // ── flash ──
-      } else if (event == "flash") {
-        addLog("Flash command received.");
-        bool prev_preview = mode_preview;
-        bool prev_program = mode_program;
-        // RGB flash: Red → Green → Blue × 3 cycles
-        for (int i = 0; i < 3; i++) {
-          setLEDs(true,  false, false); delay(150);
-          setLEDs(false, true,  false); delay(150);
-          setLEDs(false, false, true);  delay(150);
-        }
-        setLEDs(false, false, false);
-        mode_preview = prev_preview;
-        mode_program = prev_program;
-        evaluateMode();
-
-      // ── error ──
-      } else if (event == "error") {
-        addLog("Server error received.");
+    // Search for placeholder in binary
+    var found = false;
+    for (var i = 0; i <= bytes.length - needle.length; i++) {
+      var match = true;
+      for (var j = 0; j < needle.length; j++) {
+        if (bytes[i + j] !== needle[j]) { match = false; break; }
       }
-      break;
+      if (match) {
+        // Overwrite with value + null padding
+        for (var k = 0; k < needle.length; k++) {
+          bytes[i + k] = k < value.length ? value[k] : 0;
+        }
+        found = true;
+        flashLog('Patched: ' + r.placeholder.split('_')[1] + ' → "' + r.value + '"', 'ok');
+        break;
+      }
     }
-
-    default: break;
-  }
-}
-
-void connectToServer() {
-  addLog("Connecting to TA: " + tallyarbiter_host + ":" + String(tallyarbiter_port));
-  socket.begin(tallyarbiter_host, tallyarbiter_port, "/socket.io/?EIO=3");
-  socket.onEvent(socketEvent);
-  socket.setReconnectInterval(5000);
-}
-
-/* ════════════════════════════════════════
-   WEB UI
-   ════════════════════════════════════════ */
-void handleRoot() {
-  String p = "<!DOCTYPE html><html><head>"
-    "<meta name=viewport content='width=device-width,initial-scale=1'>"
-    "<title>Tally " + listenerDeviceName + "</title>"
-    "<style>"
-    "body{font-family:monospace;background:#0a0a0a;color:#e0e0e0;max-width:480px;margin:0 auto;padding:1rem}"
-    "h2{color:#ff2d2d;letter-spacing:.1em}"
-    "label{display:block;font-size:.7rem;color:#888;margin:.8rem 0 .2rem;text-transform:uppercase;letter-spacing:.1em}"
-    "input{width:100%;background:#1a1a1a;border:1px solid #333;color:#e0e0e0;padding:.5rem;border-radius:3px;box-sizing:border-box;font-family:monospace}"
-    "button{margin-top:.75rem;padding:.6rem 1.2rem;background:#ff2d2d;color:#fff;border:none;border-radius:3px;cursor:pointer;font-family:monospace;letter-spacing:.1em}"
-    ".row{display:flex;gap:.5rem}"
-    ".row input:last-child{max-width:90px}"
-    ".sv{display:flex;justify-content:space-between;padding:.35rem 0;border-bottom:1px solid #1f1f1f;font-size:.75rem}"
-    ".sl{color:#666;text-transform:uppercase;letter-spacing:.08em}"
-    ".on{color:#00e676}.off{color:#ff2d2d}"
-    "#log{background:#050505;border:1px solid #1f1f1f;padding:.5rem;height:180px;overflow-y:auto;font-size:.65rem;color:#555;white-space:pre-wrap;margin-top:.5rem}"
-    ".lt{font-size:.6rem;color:#ff2d2d;letter-spacing:.2em;text-transform:uppercase;margin-top:1rem}"
-    ".btn-pause{background:transparent;border:1px solid #ffab00;color:#ffab00;display:block;width:100%;margin-bottom:.5rem}"
-    "</style></head><body>"
-    "<h2>Tally Arbiter</h2>"
-    "<div class=sv><span class=sl>Device</span><span>" + listenerDeviceName + "</span></div>"
-    "<div class=sv><span class=sl>MAC</span><span>" + WiFi.macAddress() + "</span></div>"
-    "<div class=sv><span class=sl>IP</span><span>" + WiFi.localIP().toString() + "</span></div>"
-    "<div class=sv><span class=sl>WiFi</span><span class='" + String(networkConnected ? "on'>CONNECTED" : "off'>OFFLINE") + "</span></div>"
-    "<div class=sv><span class=sl>TA Server</span><span>" + tallyarbiter_host + ":" + String(tallyarbiter_port) + "</span></div>"
-    "<div class=sv><span class=sl>Assigned Device</span><span>" + DeviceName + " (" + DeviceId + ")</span></div>"
-    "<div class=sv><span class=sl>LED Type</span><span>" + String(USE_RGB ? "RGB 4-pin" : "2-pin") + (USE_RGB ? (RGB_ANODE ? " Anode" : " Cathode") : "") + "</span></div>"
-    "<hr>"
-    "<label>WiFi SSID</label><input type=text id=ssid value='" + networkSSID + "'>"
-    "<label>WiFi Password</label><input type=password id=wpass placeholder='(unchanged)'>"
-    "<label>Tally Arbiter IP</label>"
-    "<div class=row>"
-    "<input type=text id=host value='" + tallyarbiter_host + "'>"
-    "<input type=number id=port value='" + String(tallyarbiter_port) + "'>"
-    "</div>"
-    "<label>Listener Name</label><input type=text id=lname value='" + listenerDeviceName + "'>"
-    "<label>Device ID</label><input type=text id=did value='" + DeviceId + "'>"
-    "<button class=btn-pause id=pbtn onclick=togglePause()>⏸ Pause Reconnect (edit safely)</button>"
-    "<button onclick=sv()>Save &amp; Reboot</button>"
-    "<div id=msg></div>"
-    "<div class=lt>Debug Log</div>"
-    "<div id=log>";
-
-  int start = (logHead >= LOG_LINES) ? logHead : 0;
-  for (int i = 0; i < LOG_LINES; i++) {
-    const String& line = logBuffer[(start + i) % LOG_LINES];
-    if (line.length()) { p += line; p += "\n"; }
-  }
-  p += "</div>"
-    "<script>"
-    "var paused=false;"
-    "function togglePause(){"
-    "var btn=document.getElementById('pbtn');"
-    "if(!paused){"
-    "fetch('/pause');paused=true;"
-    "btn.textContent='▶ Resume Reconnect';"
-    "btn.style.borderColor='#00e676';btn.style.color='#00e676';"
-    "document.getElementById('msg').textContent='Paused — edit freely then save.';"
-    "}else{"
-    "fetch('/resume');paused=false;"
-    "btn.textContent='⏸ Pause Reconnect (edit safely)';"
-    "btn.style.borderColor='#ffab00';btn.style.color='#ffab00';"
-    "document.getElementById('msg').textContent='';"
-    "}}"
-    "function sv(){"
-    "var s=document.getElementById('ssid').value,"
-    "wp=document.getElementById('wpass').value,"
-    "h=document.getElementById('host').value,"
-    "pt=document.getElementById('port').value,"
-    "d=document.getElementById('did').value,"
-    "ln=document.getElementById('lname').value;"
-    "if(!s||!h||!pt)return;"
-    "document.getElementById('msg').textContent='Saving...';"
-    "fetch('/save?ssid='+encodeURIComponent(s)+'&pass='+encodeURIComponent(wp)"
-    "+'&host='+encodeURIComponent(h)+'&port='+pt"
-    "+'&deviceid='+encodeURIComponent(d)+'&lname='+encodeURIComponent(ln))"
-    ".then(r=>r.text()).then(t=>document.getElementById('msg').textContent=t)"
-    ".catch(()=>document.getElementById('msg').textContent='Error');}"
-    "var l=document.getElementById('log');l.scrollTop=l.scrollHeight;"
-    "</script></body></html>";
-
-  webServer.send(200, "text/html", p);
-}
-
-void handleSave() {
-  if (webServer.hasArg("ssid") && webServer.arg("ssid").length() > 0)
-    networkSSID = webServer.arg("ssid");
-  if (webServer.hasArg("pass") && webServer.arg("pass").length() > 0)
-    networkPass = webServer.arg("pass");
-  if (webServer.hasArg("host"))     tallyarbiter_host  = webServer.arg("host");
-  if (webServer.hasArg("port"))     tallyarbiter_port  = webServer.arg("port").toInt();
-  if (webServer.hasArg("deviceid")) DeviceId           = webServer.arg("deviceid");
-  if (webServer.hasArg("lname"))    listenerDeviceName = webServer.arg("lname");
-
-  saveConfig();
-  webServer.send(200, "text/plain", "Saved! Rebooting...");
-  delay(1500);
-  ESP.restart();
-}
-
-/* ════════════════════════════════════════
-   NETWORK
-   ════════════════════════════════════════ */
-void WiFiEventConnected(const WiFiEventStationModeConnected& e) {
-  // Keep short — called from network stack context
-  (void)e;
-}
-
-void WiFiEventGotIP(const WiFiEventStationModeGotIP& e) {
-  networkConnected = true;
-  // Full log happens in setup() after the blocking WiFi wait loop exits
-  (void)e;
-}
-
-void WiFiEventDisconnected(const WiFiEventStationModeDisconnected& e) {
-  networkConnected = false;
-  socketConnected  = false;
-  pendingRegister  = false;
-  (void)e;
-  // WiFi library handles auto-reconnect via WiFi.reconnect() called in setup
-}
-
-void connectToNetwork() {
-  WiFi.mode(WIFI_STA);
-  WiFi.setSleepMode(WIFI_NONE_SLEEP);
-  if (USE_STATIC) WiFi.config(clientIp, gateway, subnet);
-  WiFi.begin(networkSSID.c_str(), networkPass.c_str());
-  addLog("WiFi connecting: " + networkSSID);
-}
-
-/* ════════════════════════════════════════
-   SETUP & LOOP
-   ════════════════════════════════════════ */
-void setup() {
-  Serial.begin(115200);
-  delay(200);
-
-  // Generate unique device name from chip ID
-  listenerDeviceName = "esp8266-" + String(ESP.getChipId(), HEX);
-
-  // Save compiled-in values before loadConfig() overwrites them.
-  // If the binary was patched by the web flasher these will be real credentials.
-  String compiledSSID = networkSSID;
-  String compiledPass = networkPass;
-  String compiledHost = tallyarbiter_host;
-  String compiledName = listenerDeviceName; // will be overwritten by chip ID above
-
-  // Mount filesystem and load saved config
-  if (!LittleFS.begin()) {
-    Serial.println("LittleFS mount failed — formatting...");
-    LittleFS.format();
-    LittleFS.begin();
-  }
-
-  bool hadSavedConfig = loadConfig();
-
-  // If the binary was patched with real credentials (not placeholders),
-  // always use them — this lets a reflash update WiFi/TA settings
-  // even when an old config.json exists on LittleFS.
-  bool compiledIsReal = compiledSSID.length() > 0 && !compiledSSID.startsWith("TALLY_");
-  if (compiledIsReal) {
-    Serial.println("Patched binary detected — overriding saved config with flashed values.");
-    networkSSID       = compiledSSID;
-    networkPass       = compiledPass;
-    tallyarbiter_host = compiledHost;
-    // Save immediately so future reboots use these values
-    saveConfig();
-    hadSavedConfig = false; // show as "patched" in boot log
-  }
-
-  // Set up LED pins — initLEDPins handles GPIO16 quirk
-  initLEDPins();
-
-  // Startup flash: both on briefly then off
-  setLEDs(true, true, false); delay(300); setLEDs(false, false, false); delay(100);
-
-  // Print boot info
-  Serial.println("=== Tally Arbiter ESP8266 ===");
-  Serial.println("Listener : " + listenerDeviceName);
-  Serial.println("MAC Addr : " + WiFi.macAddress());
-  Serial.println("WiFi SSID: " + networkSSID);
-  Serial.println("TA Host  : " + tallyarbiter_host);
-  Serial.println("TA Port  : " + String(tallyarbiter_port));
-  Serial.println("Device ID: " + DeviceId);
-  Serial.println("LED Type : " + String(USE_RGB ? "RGB" : "2-pin") +
-                 (USE_RGB ? (RGB_ANODE ? " Common-Anode" : " Common-Cathode") : ""));
-  Serial.println("Config   : " + String(compiledIsReal ? "Patched binary" : hadSavedConfig ? "Loaded from flash" : "Using defaults"));
-  Serial.println("=============================");
-  Serial.println("CFG_READY"); // signal to web flasher that device is ready to receive config
-
-  // Register WiFi event handlers
-  static WiFiEventHandler h1, h2, h3;
-  h1 = WiFi.onStationModeConnected(WiFiEventConnected);
-  h2 = WiFi.onStationModeGotIP(WiFiEventGotIP);
-  h3 = WiFi.onStationModeDisconnected(WiFiEventDisconnected);
-
-  // If no WiFi config stored (fresh flash with placeholders, or blank), blink and wait
-  bool hasConfig = networkSSID.length() > 0 && !networkSSID.startsWith("TALLY_");
-  if (!hasConfig) {
-    Serial.println("No WiFi config — connect via web UI after flashing, or send CFG packet.");
-    while (true) {
-      // No config: fast red/green alternating — needs setup
-      setLEDs(true, false, false);  delay(200);
-      setLEDs(false, true, false);  delay(200);
-      checkSerialConfig();
-      yield();
-      if (networkSSID.length() > 0 && !networkSSID.startsWith("TALLY_")) break;
-    }
-  }
-
-  // WiFi connecting: blue pulse — distinct from tally states
-  connectToNetwork();
-  unsigned long t = millis();
-  unsigned long lastBeacon = 0;
-  while (!networkConnected) {
-    setLEDs(false, false, true);   delay(300);  // blue on
-    setLEDs(false, false, false);  delay(300);  // off
-    if (millis() - lastBeacon > 1000) {
-      Serial.println("CFG_READY");
-      lastBeacon = millis();
-    }
-    checkSerialConfig();
-    yield();
-    if (millis() - t > 30000) {
-      addLog("WiFi timeout — rebooting.");
-      ESP.restart();
-    }
-  }
-  initLEDPins();
-  setLEDs(false, false, false);
-  addLog("WiFi OK: " + WiFi.localIP().toString());
-
-  // Start web server
-  webServer.on("/",             handleRoot);
-  webServer.on("/save",         handleSave);
-  webServer.on("/pause",        []() { socketPaused = true;  webServer.send(200, "text/plain", "paused");  });
-  webServer.on("/resume",       []() { socketPaused = false; webServer.send(200, "text/plain", "resumed"); });
-  webServer.on("/resetconfig",  []() {
-    LittleFS.remove(CONFIG_FILE);
-    webServer.send(200, "text/plain", "Config cleared. Rebooting...");
-    delay(1000);
-    ESP.restart();
+    if (!found) flashLog('Warning: placeholder not found for ' + r.placeholder.split('_')[1], 'warn');
   });
-  webServer.begin();
-  addLog("Web UI: http://" + WiFi.localIP().toString());
 
-  connectToServer();
+  return bytes.buffer;
 }
 
-void loop() {
-  webServer.handleClient();
-  if (!socketPaused) socket.loop();
-  checkSerialConfig();
+// ─────────────────────────────────────
+//  Fetch firmware helpers
+// ─────────────────────────────────────
+async function fetchFirmware() {
+  var base = window.location.href.replace(/\/[^/]*$/, '/');
+  var board = selectedBoard;
+  flashLog('Fetching ' + board.toUpperCase() + ' firmware...', 'info');
 
-  if (pendingRegister && socketConnected) {
-    pendingRegister = false;
-    doRegister();
+  if (board === 'esp8266') {
+    var fwRes = await fetch(base + 'firmware/tally-arbiter-esp8266.ino.bin');
+    if (!fwRes.ok) throw new Error('ESP8266 firmware not found (' + fwRes.status + ') — check CI build');
+    var fwBuf = await fwRes.arrayBuffer();
+    flashLog('Firmware ' + (fwBuf.byteLength/1024).toFixed(1) + ' KB loaded — patching config...', 'ok');
+
+    // Patch WiFi and TA settings directly into the binary
+    var cfg = savedCfg || getConfig();
+    fwBuf = patchFirmwareBinary(fwBuf, [
+      { placeholder: 'TALLY_SSID_PLACEHOLDER_00000000000000000000000000000000', value: cfg.ssid },
+      { placeholder: 'TALLY_PASS_PLACEHOLDER_00000000000000000000000000000000', value: cfg.pass },
+      { placeholder: 'TALLY_HOST_PLACEHOLDER_000000000000000',                  value: cfg.taHost },
+      { placeholder: 'TALLY_NAME_PLACEHOLDER_000000000000000',                  value: cfg.lName }
+    ]);
+    flashLog('Binary patched — WiFi and TA settings embedded.', 'ok');
+    return { board: 'esp8266', fwBuf };
+  } else {
+    var [fwRes, blRes, ptRes] = await Promise.all([
+      fetch(base + 'firmware/tally-arbiter-esp32.ino.bin'),
+      fetch(base + 'firmware/tally-arbiter-esp32.ino.bootloader.bin'),
+      fetch(base + 'firmware/tally-arbiter-esp32.ino.partitions.bin')
+    ]);
+    if (!fwRes.ok) throw new Error('Firmware not found (' + fwRes.status + ')');
+    if (!blRes.ok) throw new Error('Bootloader not found');
+    if (!ptRes.ok) throw new Error('Partitions not found');
+    var [fwBuf, blBuf, ptBuf] = await Promise.all([fwRes.arrayBuffer(), blRes.arrayBuffer(), ptRes.arrayBuffer()]);
+    flashLog('Firmware ' + (fwBuf.byteLength/1024).toFixed(1) + ' KB loaded.', 'ok');
+    return { board: 'esp32', fwBuf, blBuf, ptBuf };
   }
-
-  yield(); // ESP8266 must yield regularly — no RTOS, no delay(1) needed
 }
+
+async function connectESP() {
+  var ESPLoader = window._ESPLoader;
+  var Transport = window._Transport;
+  if (!ESPLoader || !Transport) throw new Error('esptool-js not loaded — please refresh');
+  var boardLabel = selectedBoard === 'esp8266' ? 'ESP8266' : 'ESP32';
+  flashLog('Select the ' + boardLabel + ' serial port...', 'warn');
+  serialPort = await navigator.serial.requestPort();
+  setFlashBadge('Port selected', 'ok');
+  var transport = new Transport(serialPort, true);
+  var esp = new ESPLoader({ transport, baudrate: 115200, terminal: {
+    clean: function(){},
+    writeLine: function(s){ flashLog(s,'dim'); },
+    write:     function(s){ flashLog(s,'dim'); }
+  }});
+  setProgress(15, 'Connecting to chip...');
+  flashLog('Connecting — hold BOOT + tap EN/RST if this hangs' + (selectedBoard === 'esp8266' ? ' (ESP8266 may not need BOOT)' : ''), 'warn');
+  await esp.main();
+  flashLog('Chip: ' + esp.chip.CHIP_NAME, 'ok');
+  return { esp, transport };
+}
+
+async function writeFiles(esp, fw, progressOffset) {
+  progressOffset = progressOffset || 20;
+  var files;
+  if (fw.board === 'esp8266') {
+    // ESP8266: single binary at 0x0
+    files = [
+      { name:'firmware', data:fw.fwBuf, address:0x0 }
+    ];
+  } else {
+    // ESP32: bootloader + partitions + firmware
+    files = [
+      { name:'bootloader', data:fw.blBuf, address:0x1000  },
+      { name:'partitions', data:fw.ptBuf, address:0x8000  },
+      { name:'firmware',   data:fw.fwBuf, address:0x10000 }
+    ];
+  }
+  setProgress(progressOffset, 'Changing baud rate...');
+  await esp.changeBaud(921600);
+  flashLog('Writing firmware to flash...', 'info');
+  await esp.writeFlash({
+    fileArray: files.map(function(f){
+      return { data: esp.ui8ToBstr(new Uint8Array(f.data)), address: f.address };
+    }),
+    flashSize:'keep', flashMode:'keep', flashFreq:'keep',
+    eraseAll:false, compress:true,
+    reportProgress: function(fi, written, total) {
+      setProgress(progressOffset + (written/total) * (90 - progressOffset),
+        'Writing ' + files[fi].name + '... ' + Math.round(written/1024) + '/' + Math.round(total/1024) + ' KB');
+    }
+  });
+}
+
+// ─────────────────────────────────────
+//  FLASH FIRMWARE
+// ─────────────────────────────────────
+async function startFlash() {
+  if (isFlashing) return;
+  var cfg = getConfig();
+  if (cfg.errors.length > 0) { cfg.errors.forEach(function(e){ flashLog(e,'error'); }); return; }
+  savedCfg = cfg;
+  isFlashing = true;
+  document.getElementById('btn-flash').disabled = true;
+  setFlashBadge('Working...', 'warn');
+
+  try {
+    setProgress(5, 'Fetching firmware...');
+    var fw = await fetchFirmware();
+
+    var conn = await connectESP();
+    await writeFiles(conn.esp, fw, 20);
+
+    setProgress(97, 'Sending config...');
+    flashLog('Flash complete! Sending config before reset...', 'ok');
+
+    // Drop back to 115200 so the ESP32 UART can read it on boot
+    try { await conn.esp.changeBaud(115200); } catch(_) {}
+    // Write CFG packet directly through esptool's transport while we still own the port
+    var cfgCmd = new TextEncoder().encode(buildCFGPacket(cfg));
+    try {
+      await conn.transport.write(cfgCmd);
+      flashLog('Config packet written to device buffer.', 'ok');
+      await delay(200);
+    } catch(e) {
+      flashLog('Config pre-write failed (' + e.message + ') — will send after reboot.', 'warn');
+    }
+
+    try { await conn.esp.softReset(); } catch(_) {}
+    try { await conn.transport.disconnect(); } catch(_) {}
+    try { await serialPort.close(); } catch(_) {} // fully release so config send gets a clean port
+    serialPort = null;
+    await delay(600); // give OS time to release the port
+    setProgress(100, 'Done!');
+    setFlashBadge('Flashed ✓', 'ok');
+    flashLog('Device rebooting — config sent, moving to confirmation...', 'ok');
+
+    await delay(800);
+    populateSendConfig(cfg, null);
+    goTo(3);
+
+  } catch(e) {
+    flashLog('Error: ' + e.message, 'error');
+    setFlashBadge('Failed', 'error');
+    serialPort = null;
+  } finally {
+    isFlashing = false;
+    document.getElementById('btn-flash').disabled = false;
+  }
+}
+
+// ─────────────────────────────────────
+//  ERASE ONLY
+// ─────────────────────────────────────
+async function eraseOnly() {
+  if (isFlashing) return;
+  isFlashing = true;
+  document.getElementById('btn-flash').disabled = true;
+  setFlashBadge('Erasing...', 'warn');
+  try {
+    var ESPLoader = window._ESPLoader, Transport = window._Transport;
+    if (!ESPLoader || !Transport) throw new Error('esptool-js not loaded — refresh');
+    serialPort = await navigator.serial.requestPort();
+    var transport = new Transport(serialPort, true);
+    var esp = new ESPLoader({ transport, baudrate:115200, terminal:{
+      clean:function(){}, writeLine:function(s){flashLog(s,'dim');}, write:function(s){flashLog(s,'dim');}
+    }});
+    setProgress(10, 'Connecting...');
+    await esp.main();
+    flashLog('Chip: ' + esp.chip.CHIP_NAME, 'ok');
+    setProgress(30, 'Erasing — takes ~10 seconds...');
+    flashLog('Erasing flash...', 'warn');
+    await esp.eraseFlash();
+    setProgress(100, 'Erase complete');
+    flashLog('✓ Flash erased.', 'ok');
+    flashLog('Now use "Erase + Flash Fresh" to reflash, or unplug and replug USB.', 'warn');
+    setFlashBadge('Erased', 'warn');
+    try { await transport.disconnect(); } catch(_) {}
+    serialPort = null;
+  } catch(e) {
+    flashLog('Error: ' + e.message, 'error');
+    setFlashBadge('Failed', 'error');
+    serialPort = null;
+  } finally {
+    isFlashing = false;
+    document.getElementById('btn-flash').disabled = false;
+  }
+}
+
+// ─────────────────────────────────────
+//  ERASE + FLASH FRESH
+// ─────────────────────────────────────
+async function startCleanFlash() {
+  if (isFlashing) return;
+  var cfg = getConfig();
+  if (cfg.errors.length > 0) { cfg.errors.forEach(function(e){ flashLog(e,'error'); }); return; }
+  savedCfg = cfg;
+  isFlashing = true;
+  document.getElementById('btn-flash').disabled = true;
+  setFlashBadge('Working...', 'warn');
+  try {
+    setProgress(5, 'Fetching firmware...');
+    var fw = await fetchFirmware();
+    var conn = await connectESP();
+
+    setProgress(20, 'Erasing flash — ~10 seconds...');
+    flashLog('Erasing flash...', 'warn');
+    await conn.esp.eraseFlash();
+    flashLog('Erased.', 'ok');
+
+    await writeFiles(conn.esp, fw, 35);
+
+    setProgress(97, 'Sending config...');
+    flashLog('Flash complete! Sending config before reset...', 'ok');
+
+    try { await conn.esp.changeBaud(115200); } catch(_) {}
+    var cfgCmd = new TextEncoder().encode(buildCFGPacket(cfg));
+    try {
+      await conn.transport.write(cfgCmd);
+      flashLog('Config packet written to device buffer.', 'ok');
+      await delay(200);
+    } catch(e) {
+      flashLog('Config pre-write failed (' + e.message + ') — will send after reboot.', 'warn');
+    }
+
+    try { await conn.esp.softReset(); } catch(_) {}
+    try { await conn.transport.disconnect(); } catch(_) {}
+    try { await serialPort.close(); } catch(_) {}
+    serialPort = null;
+    await delay(600);
+    setProgress(100, 'Done!');
+    setFlashBadge('Flashed ✓', 'ok');
+    flashLog('Device rebooting — config sent, moving to confirmation...', 'ok');
+
+    await delay(800);
+    populateSendConfig(cfg, null);
+    goTo(3);
+
+  } catch(e) {
+    flashLog('Error: ' + e.message, 'error');
+    setFlashBadge('Failed', 'error');
+    serialPort = null;
+  } finally {
+    isFlashing = false;
+    document.getElementById('btn-flash').disabled = false;
+  }
+}
+
+// ─────────────────────────────────────
+//  SEND CONFIG ONLY (advanced option)
+// ─────────────────────────────────────
+async function sendConfigOnly() {
+  var cfg = getConfig();
+  if (cfg.errors.length > 0) { cfg.errors.forEach(function(e){ flashLog(e,'error'); }); return; }
+  savedCfg = cfg;
+  populateSendConfig(cfg);
+  goTo(3);
+}
+
+// ─────────────────────────────────────
+//  Populate Screen 3
+// ─────────────────────────────────────
+function populateSendConfig(cfg, port) {
+  document.getElementById('sc-ssid').textContent  = cfg.ssid;
+  document.getElementById('sc-host').textContent  = cfg.taHost + ':' + cfg.taPort;
+  document.getElementById('sc-lname').textContent = cfg.lName;
+  document.getElementById('sc-status').textContent = '';
+  document.getElementById('cfg-log').innerHTML = '<span class="log-dim">// Ready.</span><br>';
+  savedPort = port || null;
+  savedCfg  = cfg;
+
+  var board = cfg.board || selectedBoard;
+
+  if (board === 'esp8266') {
+    // Show web UI instructions, hide serial config panel
+    document.getElementById('sc-esp32-panel').style.display  = 'none';
+    document.getElementById('sc-esp8266-panel').style.display = '';
+    var hint = document.getElementById('sc8-ssid-hint');
+    if (hint) hint.textContent = cfg.ssid || 'your-ssid';
+  } else {
+    // Show serial config panel, hide ESP8266 panel
+    document.getElementById('sc-esp32-panel').style.display  = '';
+    document.getElementById('sc-esp8266-panel').style.display = 'none';
+    document.getElementById('btn-sendcfg').disabled = false;
+    if (savedPort) {
+      setSCStatus('Sending config over serial...', 'warn');
+      document.getElementById('btn-sendcfg').disabled = true;
+      setTimeout(function() { doSendConfig(); }, 2000);
+    } else {
+      setSCStatus('Waiting for device confirmation...', 'warn');
+      document.getElementById('btn-sendcfg').disabled = true;
+      setTimeout(function() { listenForConfirmation(cfg); }, 2500);
+    }
+  }
+}
+
+async function listenForConfirmation(cfg) {
+  if (!cfg.board) cfg.board = selectedBoard;
+  var btn = document.getElementById('btn-sendcfg');
+  if (cfg.board === 'esp8266') {
+    setSCStatus('Click "Send Config" to continue.', 'warn');
+    cfgLog('Click Send Config to send settings to the device.', 'info');
+    btn.disabled = false;
+    return;
+  }
+  var port = null;
+  try {
+    var ports = await navigator.serial.getPorts();
+    if (ports.length > 0) port = ports[ports.length - 1];
+  } catch(_) {}
+  if (!port) { setSCStatus('Click Send Config to continue.', 'warn'); btn.disabled = false; return; }
+  try {
+    try { await port.close(); } catch(_) {}
+    await delay(300);
+    await port.open({ baudRate: 115200 });
+    var reader = port.readable.getReader(), buf = '', deadline = Date.now() + 7000;
+    while (Date.now() < deadline) {
+      var r = await Promise.race([reader.read(), delay(100).then(function(){ return {value:null}; })]);
+      if (r.value) {
+        var txt = new TextDecoder().decode(r.value); buf += txt;
+        txt.split('\n').forEach(function(l){ if(l.trim()) cfgLog('← '+l.trim(), l.indexOf('CFG')>=0?'ok':'dim'); });
+        if (buf.indexOf('CFG saved') >= 0 || buf.indexOf('Rebooting') >= 0) break;
+      }
+    }
+    try { reader.cancel(); } catch(_) {} try { reader.releaseLock(); } catch(_) {} try { await port.close(); } catch(_) {}
+    if (buf.indexOf('CFG saved') >= 0 || buf.indexOf('Rebooting') >= 0) {
+      setSCStatus('✓ Config confirmed!', 'ok'); setTimeout(function(){ goToDone(cfg); }, 1200);
+    } else { setSCStatus('Click Send Config to continue.', 'warn'); btn.disabled = false; }
+  } catch(e) { setSCStatus('Click Send Config to continue.', 'warn'); btn.disabled = false; }
+}
+
+// ─────────────────────────────────────
+//  DO SEND CONFIG
+//  Always requests a fresh port — no reuse.
+//  ESP8266: open → DTR reset → wait 2.5s → send → optimistic proceed
+//  ESP32:   open → send → wait for CFG saved echo
+// ─────────────────────────────────────
+async function doSendConfig() {
+  var cfg = savedCfg || getConfig();
+  if (!cfg.board) cfg.board = selectedBoard;
+  var btn = document.getElementById('btn-sendcfg');
+  btn.disabled = true;
+  var port = null;
+  try {
+    cfgLog('Select the ' + (cfg.board === 'esp8266' ? 'ESP8266' : 'ESP32') + ' serial port...', 'warn');
+    setSCStatus('Select serial port...', 'warn');
+    port = await navigator.serial.requestPort();
+    try { await port.close(); } catch(_) {}
+    await delay(300);
+    await port.open({ baudRate: 115200 });
+    cfgLog('Port open.', 'ok');
+
+    if (cfg.board !== 'esp8266') {
+      // ESP32: open port, wait for device to boot (EN/RST), then send immediately
+      // The serial buffer is cleared on reset so we must send AFTER boot
+      cfgLog('Press EN/RST on the ESP32 now — sending config on boot...', 'warn');
+      setSCStatus('Press EN/RST on the device!', 'warn');
+
+      var reader = port.readable.getReader();
+      var writer = port.writable.getWriter();
+      var buf = '', sent = false, deadline = Date.now() + 15000;
+
+      while (Date.now() < deadline) {
+        var r = await Promise.race([reader.read(), delay(100).then(function(){ return {value:null}; })]);
+        if (r.value) {
+          var txt = new TextDecoder().decode(r.value); buf += txt;
+          txt.split('\n').forEach(function(l){ if(l.trim()) cfgLog('← '+l.trim(), 'dim'); });
+
+          // Device is booting — send config as soon as we see any output
+          if (!sent && buf.length > 10) {
+            sent = true;
+            var cmd = buildCFGPacket(cfg);
+            cfgLog('→ Device booting — sending ' + cmd.length + ' bytes now...', 'info');
+            await writer.write(new TextEncoder().encode(cmd));
+            await writer.ready;
+            setSCStatus('Config sent — waiting for confirmation...', 'warn');
+            deadline = Date.now() + 6000; // reset deadline for confirmation
+          }
+
+          if (sent && (buf.indexOf('CFG saved') >= 0 || buf.indexOf('Rebooting') >= 0)) break;
+        }
+      }
+
+      writer.releaseLock();
+      try { reader.cancel(); } catch(_) {}
+      try { reader.releaseLock(); } catch(_) {}
+      try { await port.close(); } catch(_) {}
+
+      if (buf.indexOf('CFG saved') >= 0 || buf.indexOf('Rebooting') >= 0) {
+        setSCStatus('✓ Config saved!', 'ok');
+        cfgLog('✓ Confirmed. Device rebooting.', 'ok');
+        setTimeout(function(){ goToDone(cfg); }, 1200);
+      } else if (!sent) {
+        setSCStatus('No boot detected — press EN/RST and try again.', 'error');
+        cfgLog('No output from device in 15s. Press EN/RST and try again.', 'warn');
+        btn.disabled = false;
+      } else {
+        setSCStatus('No confirmation — try again.', 'error');
+        cfgLog('No confirmation. Press EN/RST then click Send Config again.', 'warn');
+        btn.disabled = false;
+      }
+      return;
+    }
+
+    // ESP8266 fallback serial send (binary patching is preferred, this is a backup)
+    setSCStatus('Waiting for device to boot...', 'warn');
+    cfgLog('Waiting 2.5s for ESP8266 to boot...', 'info');
+    await delay(2500);
+    var cmd = buildCFGPacket(cfg);
+    cfgLog('→ Sending ' + cmd.length + ' bytes...', 'info');
+    var writer = port.writable.getWriter();
+    await writer.write(new TextEncoder().encode(cmd));
+    await writer.ready;
+    writer.releaseLock();
+    await delay(2000);
+    try { await port.close(); } catch(_) {}
+    setSCStatus('✓ Config sent — device rebooting!', 'ok');
+    cfgLog('✓ Done.', 'ok');
+    setTimeout(function(){ goToDone(cfg); }, 1000);
+
+  } catch(e) {
+    if (e.name === 'NotFoundError') { setSCStatus('No port selected.', 'warn'); }
+    else { setSCStatus('Error: ' + e.message, 'error'); cfgLog('Error: ' + e.message, 'error'); }
+    if (port) { try { await port.close(); } catch(_) {} }
+    btn.disabled = false;
+  }
+}
+
+// ─────────────────────────────────────
+//  DONE SCREEN
+// ─────────────────────────────────────
+function goToDone(cfg) {
+  document.getElementById('done-ssid').textContent  = cfg.ssid;
+  document.getElementById('done-host').textContent  = cfg.taHost + ':' + cfg.taPort;
+  document.getElementById('done-lname').textContent = cfg.lName;
+  document.getElementById('done-led').textContent   = cfg.ledType === 'rgb' ? '4-Pin RGB' : '2-Pin (Red + Green)';
+  goTo(4);
+}
+
+// ─────────────────────────────────────
+//  SERIAL MONITOR (screen 4 only)
+// ─────────────────────────────────────
+function monLog(txt) {
+  var t = document.getElementById('mon-terminal');
+  t.textContent += txt;
+  t.scrollTop = t.scrollHeight;
+}
+function monClear() {
+  document.getElementById('mon-terminal').textContent = '';
+}
+
+async function monConnect() {
+  try {
+    document.getElementById('btn-mon-connect').disabled = true;
+    monPort = await navigator.serial.requestPort();
+    try { await monPort.close(); } catch(_) {}
+    await delay(300);
+    await monPort.open({ baudRate: 115200 });
+    monActive = true;
+    document.getElementById('mon-badge').className = 'badge badge-ok';
+    document.getElementById('mon-badge').textContent = 'Connected';
+    document.getElementById('btn-mon-disconnect').disabled = false;
+    monLog('// Connected — press EN/RST on your ' + (selectedBoard === 'esp8266' ? 'ESP8266' : 'ESP32') + ' to see boot messages.\n\n');
+    monReader = monPort.readable.getReader();
+    var dec = new TextDecoder();
+    while (monActive) {
+      try {
+        var r = await monReader.read();
+        if (r.done || !monActive) break;
+        if (r.value) monLog(dec.decode(r.value));
+      } catch(_) { break; }
+    }
+    try { await monPort.close(); } catch(_) {}
+  } catch(e) {
+    if (e.name !== 'NotFoundError') monLog('// Error: ' + e.message + '\n');
+    document.getElementById('btn-mon-connect').disabled = false;
+  }
+}
+
+async function monDisconnect() {
+  monActive = false;
+  if (monReader) { try { await monReader.cancel(); } catch(_){} try { monReader.releaseLock(); } catch(_){} monReader = null; }
+  if (monPort)   { try { await monPort.close(); }   catch(_){} monPort = null; }
+  document.getElementById('mon-badge').className  = 'badge badge-idle';
+  document.getElementById('mon-badge').textContent = 'Disconnected';
+  document.getElementById('btn-mon-connect').disabled    = false;
+  document.getElementById('btn-mon-disconnect').disabled = true;
+  monLog('\n// Disconnected.\n');
+}
+
+// ─────────────────────────────────────
+//  START OVER
+// ─────────────────────────────────────
+function startOver() {
+  monDisconnect();
+  // Reset flash screen
+  document.getElementById('flash-log').innerHTML = '<span class="log-dim">// Ready — click the button above to flash your ESP32.</span><br>';
+  document.getElementById('progress-wrap').classList.remove('show');
+  setFlashBadge('Ready', 'idle');
+  document.getElementById('btn-flash').disabled = false;
+  // Reset config screen
+  document.getElementById('cfg-log').innerHTML = '<span class="log-dim">// Click the button above to send your settings.</span><br>';
+  document.getElementById('sc-status').textContent = '';
+  document.getElementById('btn-sendcfg').disabled = false;
+  // Reset monitor
+  document.getElementById('mon-terminal').textContent = '// Connect to see live device output.\n';
+  serialPort = null;
+  savedCfg   = null;
+  savedPort  = null;
+  goTo(1);
+}
+
+// ─────────────────────────────────────
+//  SCREEN 5 — Standalone Serial Monitor
+// ─────────────────────────────────────
+var smPort = null, smReader = null, smActive = false;
+
+function smLog(txt) {
+  var t = document.getElementById('sm-terminal');
+  t.textContent += txt;
+  t.scrollTop = t.scrollHeight;
+}
+function smClear() { document.getElementById('sm-terminal').textContent = ''; }
+
+async function smConnect() {
+  try {
+    document.getElementById('btn-sm-connect').disabled = true;
+    var baud = parseInt(document.getElementById('sm-baud').value);
+    smPort = await navigator.serial.requestPort();
+    try { await smPort.close(); } catch(_) {}
+    await delay(300);
+    await smPort.open({ baudRate: baud });
+    smActive = true;
+    document.getElementById('sm-badge').className  = 'badge badge-ok';
+    document.getElementById('sm-badge').textContent = 'Connected';
+    document.getElementById('btn-sm-disconnect').disabled = false;
+    smLog('// Connected at ' + baud + ' baud — press EN/RST on your ' + (selectedBoard === 'esp8266' ? 'ESP8266' : 'ESP32') + '.\n\n');
+    smReader = smPort.readable.getReader();
+    var dec = new TextDecoder();
+    while (smActive) {
+      try {
+        var r = await smReader.read();
+        if (r.done || !smActive) break;
+        if (r.value) smLog(dec.decode(r.value));
+      } catch(_) { break; }
+    }
+    try { await smPort.close(); } catch(_) {}
+  } catch(e) {
+    if (e.name !== 'NotFoundError') smLog('// Error: ' + e.message + '\n');
+    document.getElementById('btn-sm-connect').disabled = false;
+  }
+}
+
+async function smDisconnect() {
+  smActive = false;
+  if (smReader) { try { await smReader.cancel(); } catch(_){} try { smReader.releaseLock(); } catch(_){} smReader = null; }
+  if (smPort)   { try { await smPort.close(); }   catch(_){} smPort = null; }
+  document.getElementById('sm-badge').className  = 'badge badge-idle';
+  document.getElementById('sm-badge').textContent = 'Disconnected';
+  document.getElementById('btn-sm-connect').disabled    = false;
+  document.getElementById('btn-sm-disconnect').disabled = true;
+  smLog('\n// Disconnected.\n');
+}
+
+// ─────────────────────────────────────
+//  Screen 3 serial monitor (ESP8266 panel)
+// ─────────────────────────────────────
+var sc3Port = null, sc3Reader = null, sc3Active = false;
+function sc3Log(t) {
+  var el = document.getElementById('sc3-terminal');
+  if (!el) return;
+  el.textContent += t;
+  el.scrollTop = el.scrollHeight;
+}
+function sc3Clear() { var el = document.getElementById('sc3-terminal'); if (el) el.textContent = ''; }
+async function sc3Connect() {
+  if (sc3Active) return;
+  sc3Active = true;
+  document.getElementById('btn-sc3-connect').style.display    = 'none';
+  document.getElementById('btn-sc3-disconnect').style.display = '';
+  var baud = parseInt(document.getElementById('sc3-baud').value) || 115200;
+  try {
+    sc3Port = await navigator.serial.requestPort();
+    await sc3Port.open({ baudRate: baud });
+    sc3Log('// Connected at ' + baud + ' baud — press EN/RST on your ESP8266.\n\n');
+    sc3Reader = sc3Port.readable.getReader();
+    var dec = new TextDecoder();
+    while (sc3Active) {
+      try {
+        var r = await sc3Reader.read();
+        if (r.done || !sc3Active) break;
+        if (r.value) sc3Log(dec.decode(r.value));
+      } catch(_) { break; }
+    }
+    try { await sc3Port.close(); } catch(_) {}
+  } catch(e) {
+    if (e.name !== 'NotFoundError') sc3Log('// Error: ' + e.message + '\n');
+    document.getElementById('btn-sc3-connect').style.display    = '';
+    document.getElementById('btn-sc3-disconnect').style.display = 'none';
+  }
+  sc3Active = false;
+}
+async function sc3Disconnect() {
+  sc3Active = false;
+  if (sc3Reader) { try { await sc3Reader.cancel(); } catch(_){} try { sc3Reader.releaseLock(); } catch(_){} sc3Reader = null; }
+  if (sc3Port)   { try { await sc3Port.close(); }   catch(_){} sc3Port = null; }
+  document.getElementById('btn-sc3-connect').style.display    = '';
+  document.getElementById('btn-sc3-disconnect').style.display = 'none';
+  sc3Log('\n// Disconnected.\n');
+}
+
+// ─────────────────────────────────────
+//  Dark / Light mode toggle
+// ─────────────────────────────────────
+function toggleTheme() {
+  var light = document.body.classList.toggle('light');
+  document.getElementById('theme-btn').textContent = light ? '☾ Dark' : '☀ Light';
+  try { localStorage.setItem('ta-theme', light ? 'light' : 'dark'); } catch(_) {}
+}
+(function() {
+  try {
+    if (localStorage.getItem('ta-theme') === 'light') {
+      document.body.classList.add('light');
+      var btn = document.getElementById('theme-btn');
+      if (btn) btn.textContent = '☾ Dark';
+    }
+  } catch(_) {}
+})();
+
+// ─────────────────────────────────────
+//  Update all .board-name spans when board changes
+// ─────────────────────────────────────
+function updateBoardNames(label) {
+  document.querySelectorAll('.board-name').forEach(function(el) { el.textContent = label; });
+  document.getElementById('flash-plug-hint').textContent =
+    'Plug your ' + label + ' in via USB, then click the button below.';
+}
+</script>
+</body>
+</html>
