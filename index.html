@@ -1181,24 +1181,30 @@ async function doSendConfig() {
     var buf     = '';
 
     if (cfg.board === 'esp8266') {
-      // Opening port triggered a DTR reset — device boots in ~1.5s.
-      // Wait 2s then send — this reliably lands inside checkSerialConfig's window.
-      // We drain any incoming bytes (ROM bootloader noise + boot log) while waiting.
+      // Opening port triggered a DTR reset — device boots and prints CFG_READY.
+      // Send the instant we see it — don't wait a fixed delay.
       setSCStatus('Waiting for device to boot...', 'warn');
-      cfgLog('ESP8266 resetting — sending in 2s...', 'info');
+      cfgLog('ESP8266 resetting — watching for CFG_READY...', 'info');
 
-      var waitUntil = Date.now() + 2000;
-      while (Date.now() < waitUntil) {
+      var bootDeadline = Date.now() + 8000;
+      var triggered = false;
+      while (Date.now() < bootDeadline) {
         try {
           var r = await Promise.race([reader.read(), delay(50).then(function(){ return {value:null}; })]);
           if (r.value) {
             var txt = dec.decode(r.value);
             txt.split('\n').forEach(function(l) { if (l.trim()) cfgLog('← ' + l.trim(), 'dim'); });
+            if (txt.indexOf('CFG_READY') >= 0) { triggered = true; break; }
           }
         } catch(_) { break; }
       }
-      buf = ''; // discard boot chatter — only care about post-send confirmation
-      cfgLog('Sending config...', 'ok');
+
+      if (triggered) {
+        cfgLog('✓ CFG_READY seen — sending now...', 'ok');
+      } else {
+        cfgLog('CFG_READY not seen in 8s — sending anyway...', 'warn');
+      }
+      buf = '';
     }
 
     // Send the config packet
@@ -1206,7 +1212,9 @@ async function doSendConfig() {
     var cmd = buildCFGPacket(cfg);
     cfgLog('→ Sending config (' + (cmd.length - 5) + ' bytes)...', 'info');
     await writer.write(encoder.encode(cmd));
+    await writer.ready; // wait until bytes are actually flushed to the port
     writer.releaseLock();
+    await delay(200); // brief drain before reading response
     cfgLog('Packet sent. Waiting for confirmation...', 'info');
 
     // Read confirmation — use longer window for ESP8266 which may be busy with socket events
