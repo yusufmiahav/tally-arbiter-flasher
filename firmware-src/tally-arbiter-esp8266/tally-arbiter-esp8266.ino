@@ -24,11 +24,11 @@
 
 /* ── Default config — overwritten by CFG packet or saved config ── */
 // TEST credentials — replace via web UI or CFG packet in production
-String networkSSID       = "";
-String networkPass       = "";
-String tallyarbiter_host = "192.168.1.212";
+String networkSSID       = "TALLY_SSID_PLACEHOLDER_00000000000000000000000000000000";
+String networkPass       = "TALLY_PASS_PLACEHOLDER_00000000000000000000000000000000";
+String tallyarbiter_host = "TALLY_HOST_PLACEHOLDER_000000000000000";
 int    tallyarbiter_port = 4455;
-String listenerDeviceName = "esp8266-tally";
+String listenerDeviceName = "TALLY_NAME_PLACEHOLDER_000000000000000";
 String DeviceId          = "unassigned";
 String DeviceName        = "Unassigned";
 
@@ -189,46 +189,56 @@ bool loadConfig() {
 
 /* ════════════════════════════════════════
    SERIAL CONFIG RECEIVER
-   Web flasher sends: CFG:{json}\n
+   Non-blocking — accumulates bytes into a buffer,
+   processes when a full line ending in \n arrives.
    ════════════════════════════════════════ */
+String serialLineBuffer = "";
+
 void checkSerialConfig() {
-  if (!Serial.available()) return;
-  Serial.setTimeout(5000);
-  String line = Serial.readStringUntil('\n');
-  line.trim();
-  if (!line.startsWith("CFG:")) return;
+  while (Serial.available()) {
+    char c = Serial.read();
+    if (c == '\n') {
+      String line = serialLineBuffer;
+      serialLineBuffer = "";
+      line.trim();
+      if (!line.startsWith("CFG:")) continue;
 
-  String json = line.substring(4);
-  Serial.println("CFG raw (" + String(json.length()) + " bytes): " + json);
+      String json = line.substring(4);
+      Serial.println("CFG raw (" + String(json.length()) + " bytes): " + json);
 
-  StaticJsonDocument<1024> cfg;
-  DeserializationError err = deserializeJson(cfg, json);
-  if (err) { Serial.println("CFG parse error: " + String(err.c_str())); return; }
+      StaticJsonDocument<1024> cfg;
+      DeserializationError err = deserializeJson(cfg, json);
+      if (err) { Serial.println("CFG parse error: " + String(err.c_str())); continue; }
 
-  Serial.println("CFG received — saving...");
+      Serial.println("CFG received — saving...");
 
-  // Apply values
-  if (cfg.containsKey("ssid"))     networkSSID        = cfg["ssid"].as<String>();
-  if (cfg.containsKey("pass"))     networkPass        = cfg["pass"].as<String>();
-  if (cfg.containsKey("tahost"))   tallyarbiter_host  = cfg["tahost"].as<String>();
-  if (cfg.containsKey("taport"))   tallyarbiter_port  = cfg["taport"].as<int>();
-  if (cfg.containsKey("lname"))    listenerDeviceName = cfg["lname"].as<String>();
-  if (cfg.containsKey("devid"))    DeviceId           = cfg["devid"].as<String>();
-  if (cfg.containsKey("cutbus"))   CUT_BUS            = cfg["cutbus"].as<int>() == 1;
-  if (cfg.containsKey("ledtype"))  USE_RGB            = cfg["ledtype"].as<String>() == "rgb";
-  if (cfg.containsKey("rgbanode")) RGB_ANODE          = cfg["rgbanode"].as<int>() == 1;
-  if (cfg.containsKey("pinr"))     pinRed             = cfg["pinr"].as<int>();
-  if (cfg.containsKey("ping"))     pinGreen           = cfg["ping"].as<int>();
-  if (cfg.containsKey("pinb"))     pinBlue            = cfg["pinb"].as<int>();
-  if (cfg.containsKey("static"))   USE_STATIC         = cfg["static"].as<int>() == 1;
-  if (cfg.containsKey("sip"))      clientIp.fromString(cfg["sip"].as<String>());
-  if (cfg.containsKey("sgw"))      gateway.fromString (cfg["sgw"].as<String>());
-  if (cfg.containsKey("ssn"))      subnet.fromString  (cfg["ssn"].as<String>());
+      if (cfg.containsKey("ssid"))     networkSSID        = cfg["ssid"].as<String>();
+      if (cfg.containsKey("pass"))     networkPass        = cfg["pass"].as<String>();
+      if (cfg.containsKey("tahost"))   tallyarbiter_host  = cfg["tahost"].as<String>();
+      if (cfg.containsKey("taport"))   tallyarbiter_port  = cfg["taport"].as<int>();
+      if (cfg.containsKey("lname"))    listenerDeviceName = cfg["lname"].as<String>();
+      if (cfg.containsKey("devid"))    DeviceId           = cfg["devid"].as<String>();
+      if (cfg.containsKey("cutbus"))   CUT_BUS            = cfg["cutbus"].as<int>() == 1;
+      if (cfg.containsKey("ledtype"))  USE_RGB            = cfg["ledtype"].as<String>() == "rgb";
+      if (cfg.containsKey("rgbanode")) RGB_ANODE          = cfg["rgbanode"].as<int>() == 1;
+      if (cfg.containsKey("pinr"))     pinRed             = cfg["pinr"].as<int>();
+      if (cfg.containsKey("ping"))     pinGreen           = cfg["ping"].as<int>();
+      if (cfg.containsKey("pinb"))     pinBlue            = cfg["pinb"].as<int>();
+      if (cfg.containsKey("static"))   USE_STATIC         = cfg["static"].as<int>() == 1;
+      if (cfg.containsKey("sip"))      clientIp.fromString(cfg["sip"].as<String>());
+      if (cfg.containsKey("sgw"))      gateway.fromString (cfg["sgw"].as<String>());
+      if (cfg.containsKey("ssn"))      subnet.fromString  (cfg["ssn"].as<String>());
 
-  saveConfig();
-  Serial.println("CFG saved. Rebooting...");
-  delay(500);
-  ESP.restart();
+      saveConfig();
+      Serial.println("CFG saved. Rebooting...");
+      delay(500);
+      ESP.restart();
+    } else if (c != '\r') {
+      serialLineBuffer += c;
+      // Prevent buffer overflow
+      if (serialLineBuffer.length() > 1200) serialLineBuffer = "";
+    }
+  }
 }
 
 /* ════════════════════════════════════════
@@ -604,15 +614,17 @@ void setup() {
   h2 = WiFi.onStationModeGotIP(WiFiEventGotIP);
   h3 = WiFi.onStationModeDisconnected(WiFiEventDisconnected);
 
-  // If no WiFi config stored, wait forever for CFG packet
-  if (networkSSID.length() == 0) {
-    Serial.println("No WiFi config. Waiting for CFG packet...");
-    while (networkSSID.length() == 0) {
+  // If no WiFi config stored (fresh flash with placeholders, or blank), blink and wait
+  bool hasConfig = networkSSID.length() > 0 && !networkSSID.startsWith("TALLY_");
+  if (!hasConfig) {
+    Serial.println("No WiFi config — connect via web UI after flashing, or send CFG packet.");
+    while (true) {
       setLEDs(true, false);  delay(300);
       setLEDs(false, true);  delay(300);
-      Serial.println("CFG_READY"); // keep signalling so JS can send at any time
-      checkSerialConfig();
+      checkSerialConfig(); // still accept CFG packet if sent
       yield();
+      // Re-check in case loadConfig was called by checkSerialConfig
+      if (networkSSID.length() > 0 && !networkSSID.startsWith("TALLY_")) break;
     }
   }
 
