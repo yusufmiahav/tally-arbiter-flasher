@@ -1054,18 +1054,23 @@ function populateSendConfig(cfg, port) {
   document.getElementById('sc-host').textContent  = cfg.taHost + ':' + cfg.taPort;
   document.getElementById('sc-lname').textContent = cfg.lName;
   document.getElementById('sc-status').textContent = '';
-  document.getElementById('btn-sendcfg').disabled = false;
   document.getElementById('cfg-log').innerHTML = '<span class="log-dim">// Ready.</span><br>';
   savedPort = port || null;
+  savedCfg  = cfg;
 
-  if (savedPort) {
-    // Fallback: stashed port, reopen and send
+  var board = cfg.board || selectedBoard;
+
+  if (board === 'esp8266') {
+    // ESP8266: always use doSendConfig — opening port triggers DTR reset and send
+    setSCStatus('Click Send Config to program the device.', 'info');
+    document.getElementById('btn-sendcfg').disabled = false;
+  } else if (savedPort) {
+    // ESP32 with stashed port — auto-send
     setSCStatus('Sending config over serial...', 'warn');
     document.getElementById('btn-sendcfg').disabled = true;
     setTimeout(function() { doSendConfig(); }, 2000);
   } else {
-    // Primary path: CFG packet was written into device buffer before reset.
-    // Open port to receive the confirmation echo after the device boots and processes it.
+    // ESP32 after flash — listen for confirmation (CFG was pre-buffered)
     setSCStatus('Waiting for device confirmation...', 'warn');
     document.getElementById('btn-sendcfg').disabled = true;
     setTimeout(function() { listenForConfirmation(cfg); }, 2500);
@@ -1156,6 +1161,7 @@ async function listenForConfirmation(cfg) {
 async function doSendConfig() {
   var cfg = savedCfg || getConfig();
   if (!cfg.board) cfg.board = selectedBoard; // fallback if savedCfg predates board field
+  cfgLog('DEBUG board="' + cfg.board + '" selectedBoard="' + selectedBoard + '"', 'warn');
   var btn = document.getElementById('btn-sendcfg');
   btn.disabled = true;
   setSCStatus('Opening port...', 'warn');
