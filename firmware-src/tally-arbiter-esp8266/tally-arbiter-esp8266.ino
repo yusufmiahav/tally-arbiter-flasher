@@ -254,11 +254,16 @@ String getBusTypeById(const String& busId) {
 void processTallyData() {
   mode_preview = false;
   mode_program = false;
+  addLog("My DeviceId: " + DeviceId);
   for (JsonObject state : DeviceStates.as<JsonArray>()) {
     String stateDevId = state["deviceId"].as<String>();
+    String busId      = state["busId"].as<String>();
+    int    sources    = state["sources"].as<JsonArray>().size();
+    addLog("  state devId=" + stateDevId + " busId=" + busId + " sources=" + sources);
     if (stateDevId != DeviceId) continue;
-    String busType = getBusTypeById(state["busId"].as<String>());
-    bool active = state["sources"].as<JsonArray>().size() > 0;
+    String busType = getBusTypeById(busId);
+    bool active = sources > 0;
+    addLog("  MATCH busType=" + busType + " active=" + String(active));
     if (busType == "preview") mode_preview = active;
     if (busType == "program") mode_program = active;
   }
@@ -405,11 +410,21 @@ void socketEvent(socketIOmessageType_t type, uint8_t* payload, size_t length) {
         addLog("Flash command received.");
         bool prev_preview = mode_preview;
         bool prev_program = mode_program;
-        // RGB flash: Red → Green → Blue × 3 cycles
-        for (int i = 0; i < 3; i++) {
-          setLEDs(true,  false, false); delay(150);
-          setLEDs(false, true,  false); delay(150);
-          setLEDs(false, false, true);  delay(150);
+        if (USE_RGB) {
+          // RGB: Red → Green → Blue × 3 cycles
+          for (int i = 0; i < 3; i++) {
+            setLEDs(true,  false, false); delay(150);
+            setLEDs(false, true,  false); delay(150);
+            setLEDs(false, false, true);  delay(150);
+          }
+        } else {
+          // 2-pin: flash whichever colour was active, or both if clear
+          bool flashRed   = prev_program || (!prev_program && !prev_preview);
+          bool flashGreen = prev_preview || (!prev_program && !prev_preview);
+          for (int i = 0; i < 3; i++) {
+            setLEDs(flashRed, flashGreen); delay(150);
+            setLEDs(false, false);         delay(150);
+          }
         }
         setLEDs(false, false, false);
         mode_preview = prev_preview;
