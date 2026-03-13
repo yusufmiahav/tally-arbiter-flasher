@@ -408,7 +408,7 @@ h1{font-family:var(--mono);font-size:clamp(1.4rem,4vw,2rem);letter-spacing:.18em
       <h1>Tally Arbiter</h1>
       <div class="tally-indicator"><div class="dot g"></div><div class="dot r"></div></div>
     </div>
-    <div class="tagline">ESP32 Web Flasher &mdash; v1.0</div>
+    <div class="tagline">ESP Web Flasher &mdash; v1.1</div>
   </header>
 
   <div class="steps">
@@ -421,42 +421,80 @@ h1{font-family:var(--mono);font-size:clamp(1.4rem,4vw,2rem);letter-spacing:.18em
     <div class="step"><div class="step-num">4</div><div class="step-label">Done</div></div>
   </div>
 
-  <div class="card lit">
-    <div class="card-label">// Send Config to Device</div>
-
-    <div class="alert alert-info" style="margin-bottom:1.5rem">
-      <span class="alert-icon">①</span>
-      <div>
-        Config is being sent automatically as the device boots.<br>
-        If confirmation doesn't appear within a few seconds, click <strong>Send Config</strong> below — you may need to press <strong>EN/RST</strong> on the device first.
+  <!-- ESP32 config panel (hidden for ESP8266) -->
+  <div id="sc-esp32-panel">
+    <div class="card lit">
+      <div class="card-label">// Send Config to Device</div>
+      <div class="alert alert-info" style="margin-bottom:1.5rem">
+        <span class="alert-icon">①</span>
+        <div>
+          Config is being sent automatically as the device boots.<br>
+          If confirmation doesn't appear within a few seconds, click <strong>Send Config</strong> below — you may need to press <strong>EN/RST</strong> on the device first.
+        </div>
+      </div>
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:1rem 1.25rem;margin-bottom:1.5rem;font-family:var(--mono);font-size:.7rem;line-height:2.2">
+        <div style="display:flex;justify-content:space-between;border-bottom:1px solid var(--border);padding-bottom:.4rem;margin-bottom:.4rem">
+          <span style="color:var(--muted);letter-spacing:.12em;text-transform:uppercase">WiFi</span>
+          <span id="sc-ssid" style="color:var(--text)">—</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;border-bottom:1px solid var(--border);padding-bottom:.4rem;margin-bottom:.4rem">
+          <span style="color:var(--muted);letter-spacing:.12em;text-transform:uppercase">TA Server</span>
+          <span id="sc-host" style="color:var(--text)">—</span>
+        </div>
+        <div style="display:flex;justify-content:space-between">
+          <span style="color:var(--muted);letter-spacing:.12em;text-transform:uppercase">Listener</span>
+          <span id="sc-lname" style="color:var(--text)">—</span>
+        </div>
+      </div>
+      <button class="btn btn-green btn-full" id="btn-sendcfg" onclick="doSendConfig()" style="padding:1rem;font-size:1rem;margin-bottom:1rem">
+        ▶ Send Config to Device
+      </button>
+      <div id="sc-status" style="font-family:var(--mono);font-size:.72rem;min-height:1.5rem;margin-bottom:.5rem;text-align:center"></div>
+      <div class="terminal" id="cfg-log" style="height:180px">
+        <span class="log-dim">// Waiting — click the button above to send config.</span><br>
       </div>
     </div>
+  </div>
 
-    <!-- Config summary -->
-    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:1rem 1.25rem;margin-bottom:1.5rem;font-family:var(--mono);font-size:.7rem;line-height:2.2">
-      <div style="display:flex;justify-content:space-between;border-bottom:1px solid var(--border);padding-bottom:.4rem;margin-bottom:.4rem">
-        <span style="color:var(--muted);letter-spacing:.12em;text-transform:uppercase">WiFi</span>
-        <span id="sc-ssid" style="color:var(--text)">—</span>
+  <!-- ESP8266 web UI instructions panel (hidden for ESP32) -->
+  <div id="sc-esp8266-panel" style="display:none">
+    <div class="card lit">
+      <div class="card-label">// Configure via Web UI</div>
+      <div class="alert alert-info" style="margin-bottom:1.5rem">
+        <span class="alert-icon">✓</span>
+        <div>
+          Firmware flashed successfully! The ESP8266 is configured via its built-in web interface — no serial config needed.
+        </div>
       </div>
-      <div style="display:flex;justify-content:space-between;border-bottom:1px solid var(--border);padding-bottom:.4rem;margin-bottom:.4rem">
-        <span style="color:var(--muted);letter-spacing:.12em;text-transform:uppercase">TA Server</span>
-        <span id="sc-host" style="color:var(--text)">—</span>
+
+      <div style="font-family:var(--mono);font-size:.75rem;line-height:2.2;margin-bottom:1.5rem">
+        <div style="color:var(--green);margin-bottom:.75rem;font-size:.8rem">Follow these steps:</div>
+
+        <div style="display:flex;gap:.75rem;align-items:flex-start;margin-bottom:.75rem">
+          <span style="color:var(--red);min-width:1.4rem">① </span>
+          <span>The device LEDs will <strong>blink red/green</strong> — it has no WiFi config yet and is waiting.</span>
+        </div>
+        <div style="display:flex;gap:.75rem;align-items:flex-start;margin-bottom:.75rem">
+          <span style="color:var(--red);min-width:1.4rem">② </span>
+          <span>On your phone or laptop, connect to the WiFi network called <strong style="color:var(--green)" id="sc8-ssid-hint">your-ssid</strong> — this is the network you entered on the settings page.</span>
+        </div>
+        <div style="display:flex;gap:.75rem;align-items:flex-start;margin-bottom:.75rem">
+          <span style="color:var(--red);min-width:1.4rem">③ </span>
+          <span>Wait for it to connect — LEDs go solid then off. Open a browser and go to the device's IP address shown in your router's DHCP list, or use the serial monitor below to find it.</span>
+        </div>
+        <div style="display:flex;gap:.75rem;align-items:flex-start;margin-bottom:.75rem">
+          <span style="color:var(--red);min-width:1.4rem">④ </span>
+          <span>The device web UI lets you set WiFi, TA server IP, listener name, LED pins, and static IP — then save and reboot.</span>
+        </div>
+        <div style="display:flex;gap:.75rem;align-items:flex-start">
+          <span style="color:var(--red);min-width:1.4rem">⑤ </span>
+          <span>Once connected to Tally Arbiter the LEDs will respond to tally state. Click <strong>Done</strong> below.</span>
+        </div>
       </div>
-      <div style="display:flex;justify-content:space-between">
-        <span style="color:var(--muted);letter-spacing:.12em;text-transform:uppercase">Listener</span>
-        <span id="sc-lname" style="color:var(--text)">—</span>
-      </div>
-    </div>
 
-    <button class="btn btn-green btn-full" id="btn-sendcfg" onclick="doSendConfig()" style="padding:1rem;font-size:1rem;margin-bottom:1rem">
-      ▶ Send Config to Device
-    </button>
-
-    <div id="sc-status" style="font-family:var(--mono);font-size:.72rem;min-height:1.5rem;margin-bottom:.5rem;text-align:center"></div>
-
-    <!-- Config log -->
-    <div class="terminal" id="cfg-log" style="height:180px">
-      <span class="log-dim">// Waiting — click the button above to send config.</span><br>
+      <button class="btn btn-green btn-full" onclick="goToDone(savedCfg)" style="padding:1rem;font-size:1rem">
+        ✓ Done — Device is Running
+      </button>
     </div>
   </div>
 </div>
@@ -1061,207 +1099,132 @@ function populateSendConfig(cfg, port) {
   var board = cfg.board || selectedBoard;
 
   if (board === 'esp8266') {
-    // ESP8266: always use doSendConfig — opening port triggers DTR reset and send
-    setSCStatus('Click Send Config to program the device.', 'info');
-    document.getElementById('btn-sendcfg').disabled = false;
-  } else if (savedPort) {
-    // ESP32 with stashed port — auto-send
-    setSCStatus('Sending config over serial...', 'warn');
-    document.getElementById('btn-sendcfg').disabled = true;
-    setTimeout(function() { doSendConfig(); }, 2000);
+    // Show web UI instructions, hide serial config panel
+    document.getElementById('sc-esp32-panel').style.display  = 'none';
+    document.getElementById('sc-esp8266-panel').style.display = '';
+    var hint = document.getElementById('sc8-ssid-hint');
+    if (hint) hint.textContent = cfg.ssid || 'your-ssid';
   } else {
-    // ESP32 after flash — listen for confirmation (CFG was pre-buffered)
-    setSCStatus('Waiting for device confirmation...', 'warn');
-    document.getElementById('btn-sendcfg').disabled = true;
-    setTimeout(function() { listenForConfirmation(cfg); }, 2500);
+    // Show serial config panel, hide ESP8266 panel
+    document.getElementById('sc-esp32-panel').style.display  = '';
+    document.getElementById('sc-esp8266-panel').style.display = 'none';
+    document.getElementById('btn-sendcfg').disabled = false;
+    if (savedPort) {
+      setSCStatus('Sending config over serial...', 'warn');
+      document.getElementById('btn-sendcfg').disabled = true;
+      setTimeout(function() { doSendConfig(); }, 2000);
+    } else {
+      setSCStatus('Waiting for device confirmation...', 'warn');
+      document.getElementById('btn-sendcfg').disabled = true;
+      setTimeout(function() { listenForConfirmation(cfg); }, 2500);
+    }
   }
 }
 
-// ─────────────────────────────────────
-//  Listen for confirmation after pre-buffered CFG write (ESP32 path)
-//  For ESP8266 this isn't used — doSendConfig handles it directly
-// ─────────────────────────────────────
 async function listenForConfirmation(cfg) {
+  if (!cfg.board) cfg.board = selectedBoard;
   var btn = document.getElementById('btn-sendcfg');
-
   if (cfg.board === 'esp8266') {
-    // ESP8266: opening port triggers DTR reset — so doSendConfig IS the flow.
-    // Re-enable button and let user click, or auto-trigger via doSendConfig directly.
-    cfgLog('ESP8266 detected — connect port to send config.', 'info');
-    setSCStatus('Click "Send Config" to send.', 'warn');
+    setSCStatus('Click "Send Config" to continue.', 'warn');
+    cfgLog('Click Send Config to send settings to the device.', 'info');
     btn.disabled = false;
     return;
   }
-
-  // ESP32 path: try to get previously granted port without dialog
   var port = null;
   try {
     var ports = await navigator.serial.getPorts();
     if (ports.length > 0) port = ports[ports.length - 1];
   } catch(_) {}
-
-  if (!port) {
-    cfgLog('Could not auto-connect. Click "Send Config" to send manually.', 'warn');
-    setSCStatus('Click Send Config to continue.', 'warn');
-    btn.disabled = false;
-    return;
-  }
-
+  if (!port) { setSCStatus('Click Send Config to continue.', 'warn'); btn.disabled = false; return; }
   try {
     try { await port.close(); } catch(_) {}
-    await delay(200);
+    await delay(300);
     await port.open({ baudRate: 115200 });
-    cfgLog('Port open — reading device boot output...', 'ok');
-    setSCStatus('Reading confirmation...', 'warn');
-
-    var reader = port.readable.getReader();
-    var buf = '';
-    var deadline = Date.now() + 7000;
-
+    var reader = port.readable.getReader(), buf = '', deadline = Date.now() + 7000;
     while (Date.now() < deadline) {
-      try {
-        var r = await Promise.race([reader.read(), delay(100).then(function(){ return {value:null}; })]);
-        if (r.value) {
-          var txt = new TextDecoder().decode(r.value);
-          buf += txt;
-          txt.split('\n').forEach(function(l) {
-            if (l.trim()) cfgLog('← ' + l.trim(), (l.indexOf('CFG') >= 0 || l.indexOf('saved') >= 0) ? 'ok' : 'dim');
-          });
-          if (buf.indexOf('CFG saved') >= 0 || buf.indexOf('Rebooting') >= 0) break;
-        }
-      } catch(_) { break; }
+      var r = await Promise.race([reader.read(), delay(100).then(function(){ return {value:null}; })]);
+      if (r.value) {
+        var txt = new TextDecoder().decode(r.value); buf += txt;
+        txt.split('\n').forEach(function(l){ if(l.trim()) cfgLog('← '+l.trim(), l.indexOf('CFG')>=0?'ok':'dim'); });
+        if (buf.indexOf('CFG saved') >= 0 || buf.indexOf('Rebooting') >= 0) break;
+      }
     }
-
-    try { reader.cancel(); } catch(_) {}
-    try { reader.releaseLock(); } catch(_) {}
-    try { await port.close(); } catch(_) {}
-
+    try { reader.cancel(); } catch(_) {} try { reader.releaseLock(); } catch(_) {} try { await port.close(); } catch(_) {}
     if (buf.indexOf('CFG saved') >= 0 || buf.indexOf('Rebooting') >= 0) {
-      setSCStatus('✓ Config confirmed — device rebooting!', 'ok');
-      cfgLog('✓ Config confirmed. Proceeding to done screen.', 'ok');
-      setTimeout(function() { goToDone(cfg); }, 1200);
-    } else {
-      cfgLog('No confirmation in boot log. Click Send Config to retry.', 'warn');
-      setSCStatus('Click Send Config to send manually.', 'warn');
-      btn.disabled = false;
-    }
-
-  } catch(e) {
-    cfgLog('Auto-confirm failed (' + e.message + '). Click Send Config to retry.', 'warn');
-    setSCStatus('Click Send Config to send manually.', 'warn');
-    btn.disabled = false;
-  }
+      setSCStatus('✓ Config confirmed!', 'ok'); setTimeout(function(){ goToDone(cfg); }, 1200);
+    } else { setSCStatus('Click Send Config to continue.', 'warn'); btn.disabled = false; }
+  } catch(e) { setSCStatus('Click Send Config to continue.', 'warn'); btn.disabled = false; }
 }
 
 // ─────────────────────────────────────
 //  DO SEND CONFIG
-//  ESP8266: opens port → DTR resets device → waits for CFG_READY → sends
-//  ESP32:   reuses stashed port or asks user → sends immediately
+//  Always requests a fresh port — no reuse.
+//  ESP8266: open → DTR reset → wait 2.5s → send → optimistic proceed
+//  ESP32:   open → send → wait for CFG saved echo
 // ─────────────────────────────────────
 async function doSendConfig() {
   var cfg = savedCfg || getConfig();
-  if (!cfg.board) cfg.board = selectedBoard; // fallback if savedCfg predates board field
-  cfgLog('DEBUG board="' + cfg.board + '" selectedBoard="' + selectedBoard + '"', 'warn');
+  if (!cfg.board) cfg.board = selectedBoard;
   var btn = document.getElementById('btn-sendcfg');
   btn.disabled = true;
-  setSCStatus('Opening port...', 'warn');
-
   var port = null;
-
   try {
-    if (savedPort) {
-      port = savedPort;
-      savedPort = null;
-      cfgLog('Reusing port from flash.', 'ok');
-    } else {
-      var boardLabel = (cfg.board === 'esp8266') ? 'ESP8266' : 'ESP32';
-      cfgLog('Select the ' + boardLabel + ' serial port...', 'warn');
-      port = await navigator.serial.requestPort();
-    }
-
+    cfgLog('Select the ' + (cfg.board === 'esp8266' ? 'ESP8266' : 'ESP32') + ' serial port...', 'warn');
+    setSCStatus('Select serial port...', 'warn');
+    port = await navigator.serial.requestPort();
     try { await port.close(); } catch(_) {}
-    await delay(200);
+    await delay(300);
     await port.open({ baudRate: 115200 });
     cfgLog('Port open.', 'ok');
 
-    var encoder = new TextEncoder();
-    var writer  = port.writable.getWriter();
-    var reader  = port.readable.getReader();
-    var dec     = new TextDecoder();
-    var buf     = '';
+    if (cfg.board === 'esp8266') {
+      setSCStatus('Waiting for device to boot...', 'warn');
+      cfgLog('Waiting 2.5s for ESP8266 to boot...', 'info');
+      await delay(2500);
+      setSCStatus('Sending config...', 'warn');
+    }
+
+    var cmd = buildCFGPacket(cfg);
+    cfgLog('→ Sending ' + cmd.length + ' bytes...', 'info');
+    var writer = port.writable.getWriter();
+    await writer.write(new TextEncoder().encode(cmd));
+    await writer.ready;
+    writer.releaseLock();
+    await delay(300);
 
     if (cfg.board === 'esp8266') {
-      // Opening port triggered a DTR reset — device boots and prints CFG_READY.
-      // Send the instant we see it — don't wait a fixed delay.
-      setSCStatus('Waiting for device to boot...', 'warn');
-      cfgLog('ESP8266 resetting — watching for CFG_READY...', 'info');
-
-      var bootDeadline = Date.now() + 8000;
-      var triggered = false;
-      while (Date.now() < bootDeadline) {
-        try {
-          var r = await Promise.race([reader.read(), delay(50).then(function(){ return {value:null}; })]);
-          if (r.value) {
-            var txt = dec.decode(r.value);
-            txt.split('\n').forEach(function(l) { if (l.trim()) cfgLog('← ' + l.trim(), 'dim'); });
-            if (txt.indexOf('CFG_READY') >= 0) { triggered = true; break; }
-          }
-        } catch(_) { break; }
-      }
-
-      if (triggered) {
-        cfgLog('✓ CFG_READY seen — sending now...', 'ok');
-      } else {
-        cfgLog('CFG_READY not seen in 8s — sending anyway...', 'warn');
-      }
-      buf = '';
-    }
-
-    // Send the config packet
-    setSCStatus('Sending...', 'warn');
-    var cmd = buildCFGPacket(cfg);
-    cfgLog('→ Sending config (' + (cmd.length - 5) + ' bytes)...', 'info');
-    await writer.write(encoder.encode(cmd));
-    await writer.ready; // wait until bytes are actually flushed to the port
-    writer.releaseLock();
-    await delay(200); // brief drain before reading response
-    cfgLog('Packet sent. Waiting for confirmation...', 'info');
-
-    // Read confirmation — use longer window for ESP8266 which may be busy with socket events
-    var confirmWindow = (cfg.board === 'esp8266') ? 12000 : 8000;
-    var confirmDeadline = Date.now() + confirmWindow;
-    while (Date.now() < confirmDeadline) {
-      try {
+      setSCStatus('Saving...', 'warn');
+      cfgLog('Config sent. Waiting for device to save and reboot...', 'info');
+      await delay(2000);
+      try { await port.close(); } catch(_) {}
+      setSCStatus('✓ Config sent — device rebooting!', 'ok');
+      cfgLog('✓ Done. Device will reboot and connect to Tally Arbiter.', 'ok');
+      setTimeout(function(){ goToDone(cfg); }, 1000);
+    } else {
+      cfgLog('Waiting for confirmation...', 'info');
+      setSCStatus('Waiting for confirmation...', 'warn');
+      var reader = port.readable.getReader(), buf = '', deadline = Date.now() + 8000;
+      while (Date.now() < deadline) {
         var r = await Promise.race([reader.read(), delay(100).then(function(){ return {value:null}; })]);
         if (r.value) {
-          var txt = dec.decode(r.value);
-          buf += txt;
-          // Log every non-empty line so we can see what the device is sending back
-          txt.split('\n').forEach(function(l) {
-            if (l.trim()) cfgLog('← ' + l.trim(), (l.indexOf('CFG') >= 0 || l.indexOf('saved') >= 0 || l.indexOf('Reboot') >= 0) ? 'ok' : 'dim');
-          });
+          var txt = new TextDecoder().decode(r.value); buf += txt;
+          txt.split('\n').forEach(function(l){ if(l.trim()) cfgLog('← '+l.trim(), (l.indexOf('CFG')>=0||l.indexOf('saved')>=0)?'ok':'dim'); });
           if (buf.indexOf('CFG saved') >= 0 || buf.indexOf('Rebooting') >= 0) break;
         }
-      } catch(_) { break; }
+      }
+      try { reader.cancel(); } catch(_) {} try { reader.releaseLock(); } catch(_) {} try { await port.close(); } catch(_) {}
+      if (buf.indexOf('CFG saved') >= 0 || buf.indexOf('Rebooting') >= 0) {
+        setSCStatus('✓ Config saved!', 'ok'); cfgLog('✓ Confirmed. Device rebooting.', 'ok');
+        setTimeout(function(){ goToDone(cfg); }, 1200);
+      } else {
+        setSCStatus('No confirmation — try again.', 'error');
+        cfgLog('No confirmation. Press EN/RST then click Send Config again.', 'warn');
+        btn.disabled = false;
+      }
     }
-    try { reader.cancel(); }      catch(_) {}
-    try { reader.releaseLock(); } catch(_) {}
-    try { await port.close(); }   catch(_) {}
-
-    if (buf.indexOf('CFG saved') >= 0 || buf.indexOf('Rebooting') >= 0) {
-      setSCStatus('✓ Config saved — device rebooting!', 'ok');
-      cfgLog('✓ Confirmed. Device rebooting with new settings.', 'ok');
-      setTimeout(function() { goToDone(cfg); }, 1200);
-    } else {
-      setSCStatus('No confirmation — try again.', 'error');
-      cfgLog('No confirmation received. Press EN/RST on the device then click Send Config again.', 'warn');
-      btn.disabled = false;
-    }
-
   } catch(e) {
-    if (e.name === 'NotFoundError') setSCStatus('No port selected — try again.', 'warn');
-    else setSCStatus('Error: ' + e.message, 'error');
-    cfgLog('Error: ' + e.message, 'error');
+    if (e.name === 'NotFoundError') { setSCStatus('No port selected.', 'warn'); }
+    else { setSCStatus('Error: ' + e.message, 'error'); cfgLog('Error: ' + e.message, 'error'); }
     if (port) { try { await port.close(); } catch(_) {} }
     btn.disabled = false;
   }
