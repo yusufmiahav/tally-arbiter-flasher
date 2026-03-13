@@ -1151,6 +1151,7 @@ async function listenForConfirmation(cfg) {
 // ─────────────────────────────────────
 async function doSendConfig() {
   var cfg = savedCfg || getConfig();
+  if (!cfg.board) cfg.board = selectedBoard; // fallback if savedCfg predates board field
   var btn = document.getElementById('btn-sendcfg');
   btn.disabled = true;
   setSCStatus('Opening port...', 'warn');
