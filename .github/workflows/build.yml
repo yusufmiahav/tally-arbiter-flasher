@@ -127,7 +127,6 @@ jobs:
           arduino-cli lib install "WebSockets@2.4.1"
           arduino-cli lib install "ArduinoJson@6.21.3"
           arduino-cli lib install "ArduinoGraphics"
-          arduino-cli lib install "Arduino_LED_Matrix"
 
       - name: Build firmware
         run: |
