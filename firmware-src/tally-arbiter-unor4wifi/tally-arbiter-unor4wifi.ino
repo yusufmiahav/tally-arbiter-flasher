@@ -2,8 +2,8 @@
 #include "ArduinoGraphics.h"
 #include "Arduino_LED_Matrix.h"
 #include <WiFiS3.h>
-// Tell WebSockets library to use WiFiNINA network type — prevents Ethernet.h include on R4
-#define WEBSOCKETS_NETWORK_TYPE NETWORK_WIFININA
+// Force WebSockets to use generic WiFiClient — prevents ESP/Ethernet specific includes
+#define WEBSOCKETS_NETWORK_TYPE NETWORK_GENERIC
 #include <WebSocketsClient.h>
 #include <SocketIOclient.h>
 #include <ArduinoJson.h>
@@ -24,6 +24,7 @@ String listenerDeviceName = "TALLY_NAME_PLACEHOLDER_000000000000000";
 /* ── Runtime state ── */
 ArduinoLEDMatrix matrix;
 SocketIOclient   socket;
+WiFiClient       wifiClient; // required for NETWORK_GENERIC
 
 StaticJsonDocument<4096> BusOptions;
 StaticJsonDocument<8192> Devices;
@@ -627,7 +628,7 @@ void setup() {
   matrixScroll((" TA: " + tallyarbiter_host + " ").c_str(), 55);
   socket.onEvent(socketEvent);
   socket.setReconnectInterval(10000);
-  socket.begin(tallyarbiter_host.c_str(), tallyarbiter_port);
+  socket.beginSocketIO(tallyarbiter_host.c_str(), tallyarbiter_port, "/socket.io/?EIO=3", wifiClient);
 }
 
 void loop() {
