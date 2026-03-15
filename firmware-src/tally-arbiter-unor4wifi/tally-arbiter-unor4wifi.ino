@@ -24,9 +24,9 @@ ArduinoLEDMatrix matrix;
 WiFiClient       wsClient;
 WiFiServer       webServer(80);
 
-StaticJsonDocument<4096> BusOptions;
-StaticJsonDocument<8192> Devices;
-StaticJsonDocument<4096> DeviceStates;
+StaticJsonDocument<2048> BusOptions;
+StaticJsonDocument<4096> Devices;
+StaticJsonDocument<2048> DeviceStates;
 
 String DeviceId   = "unassigned";
 String DeviceName = "Unassigned";
@@ -66,7 +66,7 @@ unsigned long pingInterval  = 25000;
 #define EE_MAGIC_VAL 0x4241
 
 /* ── Log ring buffer ── */
-#define LOG_LINES 20
+#define LOG_LINES 10
 String logBuffer[LOG_LINES];
 int    logHead = 0;
 void addLog(const String& s) { Serial.println(s); logBuffer[logHead++ % LOG_LINES] = s; }
@@ -428,48 +428,47 @@ void handleWebClient() {
     return;
   }
 
-  String p = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n";
-  p += "<!DOCTYPE html><html><head><meta charset=UTF-8><meta name=viewport content='width=device-width,initial-scale=1'>"
-       "<title>Tally UNO R4</title>"
-       "<style>body{background:#0d0d0d;color:#e0e0e0;font-family:monospace;padding:1.5rem;max-width:520px;margin:auto}"
-       "h1{color:#ff2d2d;font-size:1.3rem}label{display:block;color:#555;font-size:.7rem;text-transform:uppercase;margin:.8rem 0 .2rem}"
-       "input{width:100%;background:#111;border:1px solid #2a2a2a;border-radius:3px;color:#e0e0e0;font-family:monospace;padding:.5rem .6rem;box-sizing:border-box}"
-       "button{margin-top:1rem;width:100%;background:#ff2d2d;color:#fff;border:none;border-radius:3px;font-family:monospace;padding:.65rem;cursor:pointer}"
-       ".row{display:flex;gap:.5rem}#msg{color:#00e676;font-size:.75rem;margin-top:.5rem;text-align:center}"
-       ".grid{display:grid;grid-template-columns:1fr 1fr;gap:.3rem 1rem;margin:1rem 0;padding:.75rem;background:#111;border:1px solid #1e1e1e;border-radius:3px}"
-       ".sl{color:#555;font-size:.62rem;text-transform:uppercase}.sv{font-size:.85rem}"
-       ".on{color:#00e676}.off{color:#444}.rd{color:#ff2d2d}"
-       "#log{background:#050505;border:1px solid #1a1a1a;border-radius:3px;padding:.6rem;height:180px;overflow-y:auto;font-size:.68rem;color:#888;white-space:pre-wrap}</style></head><body>";
-  p += "<h1>&#9673; TALLY ARBITER</h1><div style='color:#555;font-size:.7rem;letter-spacing:.2em;text-transform:uppercase;margin-bottom:1rem'>UNO R4 WiFi &mdash; " + listenerDeviceName + "</div>";
-  p += "<div class=grid>";
-  p += "<div><div class=sl>WiFi</div><div class='sv " + String(networkConnected?"on'>CONNECTED":"off'>OFFLINE") + "</div></div>";
-  p += "<div><div class=sl>IP</div><div class=sv>" + WiFi.localIP().toString() + "</div></div>";
-  p += "<div><div class=sl>TA Server</div><div class='sv " + String(socketConnected?"on'>CONNECTED":"off'>OFFLINE") + "</div></div>";
-  p += "<div><div class=sl>Device</div><div class=sv>" + DeviceName + "</div></div>";
-  p += "<div><div class=sl>Program</div><div class='sv " + String(mode_program?"rd'>LIVE":"off'>OFF") + "</div></div>";
-  p += "<div><div class=sl>Preview</div><div class='sv " + String(mode_preview?"on'>LIVE":"off'>OFF") + "</div></div></div>";
-  p += "<label>WiFi SSID</label><input id=s value='" + networkSSID + "'>"
-       "<label>WiFi Password</label><input type=password id=w placeholder='(unchanged)'>"
-       "<label>Tally Arbiter IP</label><div class=row><input id=h value='" + tallyarbiter_host + "'>"
-       "<input type=number id=p value='" + String(tallyarbiter_port) + "' style='max-width:80px'></div>"
-       "<label>Listener Name</label><input id=l value='" + listenerDeviceName + "'>"
-       "<label>Device ID</label><input id=d value='" + DeviceId + "'>"
-       "<button onclick=sv()>Save &amp; Reboot</button><div id=msg></div>"
-       "<hr style='border:none;border-top:1px solid #1e1e1e;margin:1rem 0'>"
-       "<div style='color:#555;font-size:.62rem;text-transform:uppercase;margin-bottom:.4rem'>Log</div>"
-       "<div id=log>";
+  const char* HD = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n";
+  client.print(HD);
+  client.print(F("<!DOCTYPE html><html><head><meta charset=UTF-8><meta name=viewport content='width=device-width,initial-scale=1'>"));
+  client.print(F("<title>Tally UNO R4</title><style>body{background:#0d0d0d;color:#e0e0e0;font-family:monospace;padding:1.5rem;max-width:520px;margin:auto}"));
+  client.print(F("h1{color:#ff2d2d;font-size:1.3rem}label{display:block;color:#555;font-size:.7rem;text-transform:uppercase;margin:.8rem 0 .2rem}"));
+  client.print(F("input{width:100%;background:#111;border:1px solid #2a2a2a;border-radius:3px;color:#e0e0e0;font-family:monospace;padding:.5rem .6rem;box-sizing:border-box}"));
+  client.print(F("button{margin-top:1rem;width:100%;background:#ff2d2d;color:#fff;border:none;border-radius:3px;font-family:monospace;padding:.65rem;cursor:pointer}"));
+  client.print(F(".row{display:flex;gap:.5rem}#msg{color:#00e676;font-size:.75rem;margin-top:.5rem;text-align:center}"));
+  client.print(F(".grid{display:grid;grid-template-columns:1fr 1fr;gap:.3rem 1rem;margin:1rem 0;padding:.75rem;background:#111;border:1px solid #1e1e1e;border-radius:3px}"));
+  client.print(F(".sl{color:#555;font-size:.62rem;text-transform:uppercase}.sv{font-size:.85rem}.on{color:#00e676}.off{color:#444}.rd{color:#ff2d2d}"));
+  client.print(F("#log{background:#050505;border:1px solid #1a1a1a;border-radius:3px;padding:.6rem;height:150px;overflow-y:auto;font-size:.65rem;color:#888;white-space:pre-wrap}</style></head><body>"));
+  client.print(F("<h1>&#9673; TALLY ARBITER</h1>"));
+  client.print("<div style='color:#555;font-size:.7rem;letter-spacing:.2em;text-transform:uppercase;margin-bottom:1rem'>UNO R4 &mdash; ");
+  client.print(listenerDeviceName); client.print(F("</div>"));
+  client.print(F("<div class=grid>"));
+  client.print(F("<div><div class=sl>WiFi</div><div class='sv ")); client.print(networkConnected?F("on'>CONNECTED"):F("off'>OFFLINE")); client.print(F("</div></div>"));
+  client.print(F("<div><div class=sl>IP</div><div class=sv>")); client.print(WiFi.localIP()); client.print(F("</div></div>"));
+  client.print(F("<div><div class=sl>TA Server</div><div class='sv ")); client.print(socketConnected?F("on'>CONNECTED"):F("off'>OFFLINE")); client.print(F("</div></div>"));
+  client.print(F("<div><div class=sl>Device</div><div class=sv>")); client.print(DeviceName); client.print(F("</div></div>"));
+  client.print(F("<div><div class=sl>Program</div><div class='sv ")); client.print(mode_program?F("rd'>LIVE"):F("off'>OFF")); client.print(F("</div></div>"));
+  client.print(F("<div><div class=sl>Preview</div><div class='sv ")); client.print(mode_preview?F("on'>LIVE"):F("off'>OFF")); client.print(F("</div></div></div>"));
+  client.print(F("<label>WiFi SSID</label><input id=s value='")); client.print(networkSSID); client.print(F("'>"));
+  client.print(F("<label>WiFi Password</label><input type=password id=w placeholder='(unchanged)'>"));
+  client.print(F("<label>Tally Arbiter IP</label><div class=row><input id=h value='")); client.print(tallyarbiter_host); client.print(F("'>"));
+  client.print(F("<input type=number id=p value='")); client.print(tallyarbiter_port); client.print(F("' style='max-width:80px'></div>"));
+  client.print(F("<label>Listener Name</label><input id=l value='")); client.print(listenerDeviceName); client.print(F("'>"));
+  client.print(F("<label>Device ID</label><input id=d value='")); client.print(DeviceId); client.print(F("'>"));
+  client.print(F("<button onclick=sv()>Save &amp; Reboot</button><div id=msg></div>"));
+  client.print(F("<hr style='border:none;border-top:1px solid #1e1e1e;margin:1rem 0'>"));
+  client.print(F("<div style='color:#555;font-size:.62rem;text-transform:uppercase;margin-bottom:.4rem'>Log</div><div id=log>"));
   int st = logHead >= LOG_LINES ? logHead : 0;
-  for (int i = 0; i < LOG_LINES; i++) { const String& l = logBuffer[(st+i)%LOG_LINES]; if (l.length()) { p+=l; p+="\n"; } }
-  p += "</div><script>function sv(){var s=document.getElementById('s').value,w=document.getElementById('w').value,"
-       "h=document.getElementById('h').value,p=document.getElementById('p').value,"
-       "l=document.getElementById('l').value,d=document.getElementById('d').value;"
-       "if(!s||!h||!p)return;document.getElementById('msg').textContent='Saving...';"
-       "fetch('/save?ssid='+encodeURIComponent(s)+'&pass='+encodeURIComponent(w)+'&host='+encodeURIComponent(h)"
-       "+'&port='+p+'&lname='+encodeURIComponent(l)+'&devid='+encodeURIComponent(d))"
-       ".then(r=>r.text()).then(t=>document.getElementById('msg').textContent=t)"
-       ".catch(()=>document.getElementById('msg').textContent='Error');}"
-       "document.getElementById('log').scrollTop=9999;</script></body></html>";
-  client.print(p);
+  for (int i = 0; i < LOG_LINES; i++) { const String& l = logBuffer[(st+i)%LOG_LINES]; if (l.length()) { client.print(l); client.print('\n'); } }
+  client.print(F("</div><script>function sv(){var s=document.getElementById('s').value,w=document.getElementById('w').value,"));
+  client.print(F("h=document.getElementById('h').value,p=document.getElementById('p').value,"));
+  client.print(F("l=document.getElementById('l').value,d=document.getElementById('d').value;"));
+  client.print(F("if(!s||!h||!p)return;document.getElementById('msg').textContent='Saving...';"));
+  client.print(F("fetch('/save?ssid='+encodeURIComponent(s)+'&pass='+encodeURIComponent(w)+'&host='+encodeURIComponent(h)"));
+  client.print(F("+'&port='+p+'&lname='+encodeURIComponent(l)+'&devid='+encodeURIComponent(d))"));
+  client.print(F(".then(r=>r.text()).then(t=>document.getElementById('msg').textContent=t)"));
+  client.print(F(".catch(()=>document.getElementById('msg').textContent='Error'));}"));
+  client.print(F("document.getElementById('log').scrollTop=9999;</script></body></html>"));
   client.stop();
 }
 
