@@ -10,11 +10,12 @@ A browser-based flasher for ESP32 and ESP8266 tally listener devices, built for 
 
 ## Supported Boards
 
-| Board | Chip | Notes |
-|---|---|---|
-| ESP32 DevKit | ESP32 | 30/38 pin board |
-| ESP8266 D1 Mini | ESP8266 | Single binary, LittleFS config |
-| NodeMCU v2 | ESP8266 | Same firmware as D1 Mini |
+| Board | Chip | Display | Notes |
+|---|---|---|---|
+| ESP32 DevKit | ESP32 | External LED(s) | 30/38 pin board |
+| ESP8266 D1 Mini | ESP8266 | External LED(s) | Single binary, LittleFS config |
+| NodeMCU v2 | ESP8266 | External LED(s) | Same firmware as D1 Mini |
+| Arduino UNO R4 WiFi | Renesas RA4M1 | Built-in 12×8 red LED matrix | No external LEDs needed |
 
 ---
 
@@ -62,7 +63,26 @@ A browser-based flasher for ESP32 and ESP8266 tally listener devices, built for 
 
 ---
 
-## LED States
+### Arduino UNO R4 WiFi
+
+No external wiring needed. The board has a built-in **12×8 red LED matrix** (96 pixels) used for all tally feedback.
+
+| State | Matrix Display |
+|---|---|
+| No config | Scrolls `" NO CONFIG  CONNECT USB "` |
+| WiFi connecting | Scrolls `" CONNECTING TO WIFI "` |
+| WiFi connected | Scrolls IP address, then clears |
+| TA connecting | Scrolls `" TA: <host> "` |
+| Preview | Border outline — hollow rectangle |
+| Program | Full matrix solid — all 96 LEDs on |
+| Program + Preview | Full matrix solid |
+| Flash command | Current state blinks off/on × 3 |
+| TA offline | Scrolls `" TA OFFLINE "` |
+| Clear / Idle | Matrix off |
+
+---
+
+## LED States — ESP32 / ESP8266
 
 | State | 2-Pin | RGB |
 |---|---|---|
@@ -129,8 +149,11 @@ Firmware is compiled automatically by GitHub Actions on every push to `firmware-
 **Required Arduino libraries:**
 - `WebSockets` by Markus Sattler (v2.4.1)
 - `ArduinoJson` (v6.x)
+- `ArduinoGraphics` — UNO R4 only
+- `Arduino_LED_Matrix` — UNO R4 only
 - ESP32 board package: `esp32:esp32@2.0.14`
 - ESP8266 board package: `esp8266:esp8266@3.1.2`
+- UNO R4 board package: `arduino:renesas_uno@1.2.2`
 
 ---
 
