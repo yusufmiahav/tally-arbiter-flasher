@@ -132,7 +132,7 @@ jobs:
         run: |
           arduino-cli compile \
             --fqbn arduino:renesas_uno:unor4wifi \
-            --build-property "build.extra_flags=-DWEBSOCKETS_NETWORK_TYPE=NETWORK_WIFININA" \
+            --build-property "build.extra_flags=-DWEBSOCKETS_NETWORK_TYPE=NETWORK_GENERIC" \
             --output-dir ./build-unor4wifi \
             ./firmware-src/tally-arbiter-unor4wifi
 
