@@ -2,6 +2,8 @@
 #include "ArduinoGraphics.h"
 #include "Arduino_LED_Matrix.h"
 #include <WiFiS3.h>
+// Tell WebSockets library to use WiFiNINA network type — prevents Ethernet.h include on R4
+#define WEBSOCKETS_NETWORK_TYPE NETWORK_WIFININA
 #include <WebSocketsClient.h>
 #include <SocketIOclient.h>
 #include <ArduinoJson.h>
