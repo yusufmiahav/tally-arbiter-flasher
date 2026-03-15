@@ -225,10 +225,6 @@ h1{font-family:var(--mono);font-size:clamp(1.4rem,4vw,2rem);letter-spacing:.18em
         style="flex:1;padding:.6rem;font-size:.78rem">
         ◉ ESP8266 / D1 Mini
       </button>
-      <button class="btn btn-ghost" id="btn-board-unor4wifi" onclick="setBoard('unor4wifi')"
-        style="flex:1;padding:.6rem;font-size:.78rem">
-        ◈ UNO R4 WiFi
-      </button>
     </div>
     <div class="hint" id="board-hint" style="margin-top:.6rem">
       ESP32 DevKit — 30/38 pin board. Use BOOT + EN/RST to enter flash mode if needed.
@@ -536,71 +532,6 @@ h1{font-family:var(--mono);font-size:clamp(1.4rem,4vw,2rem);letter-spacing:.18em
       </button>
     </div>
   </div>
-
-  <!-- UNO R4 WiFi panel -->
-  <div id="sc-unor4wifi-panel" style="display:none">
-    <div class="card lit">
-      <div class="card-label">// Arduino UNO R4 WiFi — Ready</div>
-      <div class="alert alert-info" style="margin-bottom:1.5rem">
-        <span class="alert-icon">✓</span>
-        <div>
-          Firmware flashed with your WiFi &amp; TA settings baked in. The board will connect automatically on boot.
-        </div>
-      </div>
-
-      <div style="font-family:var(--mono);font-size:.75rem;line-height:2.2;margin-bottom:1.5rem">
-        <div style="color:var(--green);margin-bottom:.75rem;font-size:.8rem">LED matrix states:</div>
-
-        <div style="display:flex;gap:.75rem;align-items:flex-start;margin-bottom:.5rem">
-          <span style="color:var(--red);min-width:8rem">Connecting</span>
-          <span>Scrolls <strong>" CONNECTING TO WIFI "</strong></span>
-        </div>
-        <div style="display:flex;gap:.75rem;align-items:flex-start;margin-bottom:.5rem">
-          <span style="color:var(--red);min-width:8rem">Connected</span>
-          <span>Scrolls IP address, then clears</span>
-        </div>
-        <div style="display:flex;gap:.75rem;align-items:flex-start;margin-bottom:.5rem">
-          <span style="color:var(--red);min-width:8rem">Preview</span>
-          <span>Border outline — hollow rectangle</span>
-        </div>
-        <div style="display:flex;gap:.75rem;align-items:flex-start;margin-bottom:.5rem">
-          <span style="color:var(--red);min-width:8rem">Program</span>
-          <span>Full matrix solid on — all 96 LEDs</span>
-        </div>
-        <div style="display:flex;gap:.75rem;align-items:flex-start;margin-bottom:.5rem">
-          <span style="color:var(--red);min-width:8rem">Flash cmd</span>
-          <span>Current state blinks off/on × 3, returns to previous</span>
-        </div>
-        <div style="display:flex;gap:.75rem;align-items:flex-start">
-          <span style="color:var(--red);min-width:8rem">TA offline</span>
-          <span>Scrolls <strong>" TA OFFLINE "</strong></span>
-        </div>
-      </div>
-
-      <!-- Serial monitor for UNO R4 -->
-      <div style="margin-top:1.25rem">
-        <div style="font-family:var(--mono);font-size:.6rem;letter-spacing:.18em;text-transform:uppercase;color:var(--red);margin-bottom:.6rem;display:flex;align-items:center;gap:8px">
-          // Serial Monitor
-          <span style="flex:1;height:1px;background:var(--border);display:block"></span>
-        </div>
-        <div style="display:flex;gap:.5rem;margin-bottom:.5rem;align-items:center;flex-wrap:wrap">
-          <select id="sc4r-baud" style="background:var(--bg2);border:1px solid var(--border2);color:var(--text);font-family:var(--mono);font-size:.65rem;padding:.3rem .5rem;border-radius:3px">
-            <option value="9600">9600</option>
-            <option value="115200" selected>115200</option>
-          </select>
-          <button class="btn btn-ghost" id="btn-sc4r-connect"    onclick="sc4rConnect()"    style="padding:.3rem .8rem;font-size:.7rem">⬡ Connect</button>
-          <button class="btn btn-ghost" id="btn-sc4r-disconnect" onclick="sc4rDisconnect()" style="padding:.3rem .8rem;font-size:.7rem;display:none">✕ Disconnect</button>
-          <button class="btn btn-ghost" onclick="sc4rClear()" style="padding:.3rem .8rem;font-size:.7rem">⌫ Clear</button>
-        </div>
-        <div class="monitor-box" id="sc4r-terminal" style="height:220px">// Connect to see device output — press RESET after connecting.
-</div>
-      </div>
-
-      <button class="btn btn-green btn-full" onclick="goToDone(savedCfg)" style="padding:1rem;font-size:1rem;margin-top:1.25rem">
-        ✓ Done — Device is Running
-      </button>
-    </div>
-  </div>
 </div>
 
 
@@ -850,7 +781,7 @@ var selectedBoard = 'esp32'; // 'esp32' or 'esp8266'
 
 function setBoard(b) {
   selectedBoard = b;
-  ['esp32','esp8266','unor4wifi'].forEach(function(id) {
+  ['esp32','esp8266'].forEach(function(id) {
     var btn = document.getElementById('btn-board-' + id);
     if (!btn) return;
     var active = id === b;
@@ -859,18 +790,16 @@ function setBoard(b) {
   });
 
   var hints = {
-    esp32:     'ESP32 DevKit — 30/38 pin board. Use BOOT + EN/RST to enter flash mode if needed.',
-    esp8266:   'ESP8266 / D1 Mini / NodeMCU. Pins: D0=Red, D2=Green, D1=Blue. 3.3V=Common Anode.',
-    unor4wifi: 'Arduino UNO R4 WiFi — built-in 12×8 red LED matrix. No external LEDs needed.'
+    esp32:   'ESP32 DevKit — 30/38 pin board. Use BOOT + EN/RST to enter flash mode if needed.',
+    esp8266: 'ESP8266 / D1 Mini / NodeMCU. Pins: D0=Red, D2=Green, D1=Blue. 3.3V=Common Anode.'
   };
   document.getElementById('board-hint').textContent = hints[b] || '';
 
-  // Hide LED hardware card for UNO R4 — it has a built-in matrix
+  // Show LED hardware card for both ESP boards
   var ledCard = document.getElementById('pins-2pin') ?
     document.getElementById('pins-2pin').closest('.card') : null;
-  if (ledCard) ledCard.style.display = (b === 'unor4wifi') ? 'none' : '';
+  if (ledCard) ledCard.style.display = '';
 
-  // Update pin defaults
   if (b === 'esp8266') {
     document.getElementById('pin-red').value   = 16;
     document.getElementById('pin-green').value = 4;
@@ -878,7 +807,7 @@ function setBoard(b) {
     document.getElementById('pin-rgb-g').value = 4;
     document.getElementById('pin-rgb-b').value = 5;
     document.getElementById('pin-2pin-hint').textContent = 'D0 (GPIO16) = Red, D2 (GPIO4) = Green. 220Ω resistor each.';
-  } else if (b === 'esp32') {
+  } else {
     document.getElementById('pin-red').value   = 23;
     document.getElementById('pin-green').value = 22;
     document.getElementById('pin-rgb-r').value = 23;
@@ -887,12 +816,11 @@ function setBoard(b) {
     document.getElementById('pin-2pin-hint').textContent = 'Two separate LEDs, each with a 220Ω resistor to GND.';
   }
 
-  var labels = { esp32:'ESP32', esp8266:'ESP8266', unor4wifi:'UNO R4 WiFi' };
+  var labels = { esp32:'ESP32', esp8266:'ESP8266' };
   updateBoardNames(labels[b] || b);
 
-  var prefix = { esp32:'esp32', esp8266:'esp8266', unor4wifi:'unor4' };
   document.getElementById('listener-name').placeholder =
-    (prefix[b] || b) + '-tally-' + Math.floor(Math.random()*9000+1000);
+    (b === 'esp8266' ? 'esp8266' : 'esp32') + '-tally-' + Math.floor(Math.random()*9000+1000);
 }
 
 function getConfig() {
@@ -998,22 +926,7 @@ async function fetchFirmware() {
   var board = selectedBoard;
   flashLog('Fetching ' + board.toUpperCase() + ' firmware...', 'info');
 
-  if (board === 'unor4wifi') {
-    var fwRes = await fetch(base + 'firmware/tally-arbiter-unor4wifi.ino.bin');
-    if (!fwRes.ok) throw new Error('UNO R4 firmware not found (' + fwRes.status + ') — check CI build');
-    var fwBuf = await fwRes.arrayBuffer();
-    flashLog('Firmware ' + (fwBuf.byteLength/1024).toFixed(1) + ' KB loaded — patching config...', 'ok');
-    var cfg = savedCfg || getConfig();
-    fwBuf = patchFirmwareBinary(fwBuf, [
-      { placeholder: 'TALLY_SSID_PLACEHOLDER_00000000000000000000000000000000', value: cfg.ssid },
-      { placeholder: 'TALLY_PASS_PLACEHOLDER_00000000000000000000000000000000', value: cfg.pass },
-      { placeholder: 'TALLY_HOST_PLACEHOLDER_000000000000000',                  value: cfg.taHost },
-      { placeholder: 'TALLY_NAME_PLACEHOLDER_000000000000000',                  value: cfg.lName }
-    ]);
-    flashLog('Binary patched — WiFi and TA settings embedded.', 'ok');
-    return { board: 'unor4wifi', fwBuf };
-
-  } else if (board === 'esp8266') {
+  if (board === 'esp8266') {
     var fwRes = await fetch(base + 'firmware/tally-arbiter-esp8266.ino.bin');
     if (!fwRes.ok) throw new Error('ESP8266 firmware not found (' + fwRes.status + ') — check CI build');
     var fwBuf = await fwRes.arrayBuffer();
@@ -1068,8 +981,8 @@ async function connectESP() {
 async function writeFiles(esp, fw, progressOffset) {
   progressOffset = progressOffset || 20;
   var files;
-  if (fw.board === 'esp8266' || fw.board === 'unor4wifi') {
-    // ESP8266 / UNO R4: single binary at 0x0
+  if (fw.board === 'esp8266') {
+    // ESP8266: single binary at 0x0
     files = [
       { name:'firmware', data:fw.fwBuf, address:0x0 }
     ];
@@ -1277,17 +1190,13 @@ function populateSendConfig(cfg, port) {
   var board = cfg.board || selectedBoard;
 
   // Hide all panels then show the right one
-  document.getElementById('sc-esp32-panel').style.display     = 'none';
-  document.getElementById('sc-esp8266-panel').style.display   = 'none';
-  document.getElementById('sc-unor4wifi-panel').style.display = 'none';
+  document.getElementById('sc-esp32-panel').style.display   = 'none';
+  document.getElementById('sc-esp8266-panel').style.display = 'none';
 
   if (board === 'esp8266') {
     document.getElementById('sc-esp8266-panel').style.display = '';
     var hint = document.getElementById('sc8-ssid-hint');
     if (hint) hint.textContent = cfg.ssid || 'your-ssid';
-
-  } else if (board === 'unor4wifi') {
-    document.getElementById('sc-unor4wifi-panel').style.display = '';
 
   } else {
     // ESP32 — serial config panel
@@ -1353,7 +1262,7 @@ async function doSendConfig() {
   btn.disabled = true;
   var port = null;
   try {
-    cfgLog('Select the ' + (cfg.board === 'esp8266' ? 'ESP8266' : cfg.board === 'unor4wifi' ? 'UNO R4 WiFi' : 'ESP32') + ' serial port...', 'warn');
+    cfgLog('Select the ' + (cfg.board === 'esp8266' ? 'ESP8266' : 'ESP32') + ' serial port...', 'warn');
     setSCStatus('Select serial port...', 'warn');
     port = await navigator.serial.requestPort();
     try { await port.close(); } catch(_) {}
@@ -1620,52 +1529,6 @@ async function sc3Disconnect() {
   sc3Log('\n// Disconnected.\n');
 }
 
-// ─────────────────────────────────────
-//  Screen 3 UNO R4 serial monitor
-// ─────────────────────────────────────
-var sc4rPort = null, sc4rReader = null, sc4rActive = false;
-function sc4rLog(t) {
-  var el = document.getElementById('sc4r-terminal');
-  if (!el) return;
-  el.textContent += t;
-  el.scrollTop = el.scrollHeight;
-}
-function sc4rClear() { var el = document.getElementById('sc4r-terminal'); if (el) el.textContent = ''; }
-async function sc4rConnect() {
-  if (sc4rActive) return;
-  sc4rActive = true;
-  document.getElementById('btn-sc4r-connect').style.display    = 'none';
-  document.getElementById('btn-sc4r-disconnect').style.display = '';
-  var baud = parseInt(document.getElementById('sc4r-baud').value) || 115200;
-  try {
-    sc4rPort = await navigator.serial.requestPort();
-    await sc4rPort.open({ baudRate: baud });
-    sc4rLog('// Connected at ' + baud + ' baud — press RESET on your UNO R4 to see boot output.\n\n');
-    sc4rReader = sc4rPort.readable.getReader();
-    var dec = new TextDecoder();
-    while (sc4rActive) {
-      try {
-        var r = await sc4rReader.read();
-        if (r.done || !sc4rActive) break;
-        if (r.value) sc4rLog(dec.decode(r.value));
-      } catch(_) { break; }
-    }
-    try { await sc4rPort.close(); } catch(_) {}
-  } catch(e) {
-    if (e.name !== 'NotFoundError') sc4rLog('// Error: ' + e.message + '\n');
-    document.getElementById('btn-sc4r-connect').style.display    = '';
-    document.getElementById('btn-sc4r-disconnect').style.display = 'none';
-  }
-  sc4rActive = false;
-}
-async function sc4rDisconnect() {
-  sc4rActive = false;
-  if (sc4rReader) { try { await sc4rReader.cancel(); } catch(_){} try { sc4rReader.releaseLock(); } catch(_){} sc4rReader = null; }
-  if (sc4rPort)   { try { await sc4rPort.close(); }   catch(_){} sc4rPort = null; }
-  document.getElementById('btn-sc4r-connect').style.display    = '';
-  document.getElementById('btn-sc4r-disconnect').style.display = 'none';
-  sc4rLog('\n// Disconnected.\n');
-}
 // ─────────────────────────────────────
 function toggleTheme() {
   var light = document.body.classList.toggle('light');
