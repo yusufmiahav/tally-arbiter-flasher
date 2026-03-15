@@ -2,10 +2,10 @@
 #include "ArduinoGraphics.h"
 #include "Arduino_LED_Matrix.h"
 #include <WiFiS3.h>
-// Force WebSockets to use generic WiFiClient — prevents ESP/Ethernet specific includes
-#define WEBSOCKETS_NETWORK_TYPE NETWORK_GENERIC
-#include <WebSocketsClient.h>
-#include <SocketIOclient.h>
+// WebSockets_Generic supports non-ESP boards including UNO R4 / Renesas
+#define WEBSOCKETS_NETWORK_TYPE NETWORK_WIFI_NINA
+#include <WebSocketsClient_Generic.h>
+#include <SocketIOclient_Generic.h>
 #include <ArduinoJson.h>
 #include <EEPROM.h>
 
@@ -22,9 +22,9 @@ int    tallyarbiter_port = 4455;
 String listenerDeviceName = "TALLY_NAME_PLACEHOLDER_000000000000000";
 
 /* ── Runtime state ── */
-ArduinoLEDMatrix matrix;
-SocketIOclient   socket;
-WiFiClient       wifiClient; // required for NETWORK_GENERIC
+ArduinoLEDMatrix  matrix;
+SocketIOclient_Generic socket;
+WiFiClient        wifiClient;
 
 StaticJsonDocument<4096> BusOptions;
 StaticJsonDocument<8192> Devices;
@@ -628,7 +628,7 @@ void setup() {
   matrixScroll((" TA: " + tallyarbiter_host + " ").c_str(), 55);
   socket.onEvent(socketEvent);
   socket.setReconnectInterval(10000);
-  socket.beginSocketIO(tallyarbiter_host.c_str(), tallyarbiter_port, "/socket.io/?EIO=3", wifiClient);
+  socket.begin(tallyarbiter_host.c_str(), tallyarbiter_port, "/socket.io/?EIO=3");
 }
 
 void loop() {
