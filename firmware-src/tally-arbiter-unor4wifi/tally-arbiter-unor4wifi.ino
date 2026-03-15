@@ -1,4 +1,5 @@
 // ArduinoGraphics MUST be included before Arduino_LED_Matrix
+// v2.0.1 — built-in WebSocket client, no external library required
 #include "ArduinoGraphics.h"
 #include "Arduino_LED_Matrix.h"
 #include <WiFiS3.h>
