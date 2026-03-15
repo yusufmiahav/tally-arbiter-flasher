@@ -15,7 +15,7 @@ A browser-based flasher for ESP32 and ESP8266 tally listener devices, built for 
 | ESP32 DevKit | ESP32 | External LED(s) | 30/38 pin board |
 | ESP8266 D1 Mini | ESP8266 | External LED(s) | Single binary, LittleFS config |
 | NodeMCU v2 | ESP8266 | External LED(s) | Same firmware as D1 Mini |
-| Arduino UNO R4 WiFi | Renesas RA4M1 | Built-in 12×8 red LED matrix | No external LEDs needed |
+| Arduino UNO R4 WiFi | Renesas RA4M1 | Built-in 12×8 red LED matrix | **Arduino IDE only** — see below |
 
 ---
 
@@ -67,6 +67,8 @@ A browser-based flasher for ESP32 and ESP8266 tally listener devices, built for 
 
 No external wiring needed. The board has a built-in **12×8 red LED matrix** (96 pixels) used for all tally feedback.
 
+> **The web flasher does not support the UNO R4 WiFi.** The UNO R4 uses a different flashing protocol (USB DFU) that is incompatible with esptool.js. Use Arduino IDE instead — see the [Arduino UNO R4 WiFi](#arduino-uno-r4-wifi-arduino-ide) section below.
+
 | State | Matrix Display |
 |---|---|
 | No config | Scrolls `" NO CONFIG  CONNECT USB "` |
@@ -102,7 +104,7 @@ No external wiring needed. The board has a built-in **12×8 red LED matrix** (96
 
 ---
 
-## How to Flash
+## How to Flash — ESP32 / ESP8266
 
 1. Open the flasher in **Chrome or Edge** (v89+)
 2. Select your board type — ESP32 or ESP8266
@@ -111,6 +113,45 @@ No external wiring needed. The board has a built-in **12×8 red LED matrix** (96
 5. Click **Connect & Flash** and select the COM port when prompted
 6. **ESP32 only:** hold **BOOT** while clicking if it hangs at "Connecting..."
 7. WiFi and TA settings are baked directly into the binary at flash time — no serial config step needed
+
+---
+
+## Arduino UNO R4 WiFi — Arduino IDE
+
+The UNO R4 WiFi uses a different flashing protocol that is not supported by the web flasher. Use Arduino IDE instead.
+
+### Setup
+
+1. Install [Arduino IDE 2.x](https://www.arduino.cc/en/software)
+2. In Arduino IDE go to **Board Manager** and install **Arduino UNO R4 Boards**
+3. Install these libraries via **Library Manager**:
+   - `ArduinoJson` (v6.x)
+   - `ArduinoGraphics`
+   - `Arduino_LED_Matrix` is bundled with the board package — no separate install needed
+4. Download the sketch: [`firmware-src/tally-arbiter-unor4wifi/tally-arbiter-unor4wifi.ino`](firmware-src/tally-arbiter-unor4wifi/tally-arbiter-unor4wifi.ino)
+
+### Configure
+
+Open the sketch and edit these lines near the top:
+
+```cpp
+String networkSSID        = "YourWiFiName";
+String networkPass        = "YourWiFiPassword";
+String tallyarbiter_host  = "192.168.1.x";
+int    tallyarbiter_port  = 4455;
+String listenerDeviceName = "unor4-tally-1";
+```
+
+### Upload
+
+1. Connect the UNO R4 via USB
+2. Select **Tools → Board → Arduino UNO R4 WiFi**
+3. Select the correct port under **Tools → Port**
+4. Click **Upload**
+
+### After Upload
+
+The LED matrix will scroll `" CONNECTING TO WIFI "` then show the IP address once connected. Browse to that IP to access the web UI and change settings without re-uploading.
 
 ---
 
@@ -147,13 +188,13 @@ To factory reset an ESP8266: browse to `http://<device-ip>/resetconfig`
 Firmware is compiled automatically by GitHub Actions on every push to `firmware-src/`. Binaries are committed to `firmware/`.
 
 **Required Arduino libraries:**
-- `WebSockets` by Markus Sattler (v2.4.1)
+- `WebSockets` by Markus Sattler (v2.4.1) — ESP32 and ESP8266
 - `ArduinoJson` (v6.x)
 - `ArduinoGraphics` — UNO R4 only
-- `Arduino_LED_Matrix` — UNO R4 only
+- `Arduino_LED_Matrix` — UNO R4 only, bundled with the board package
 - ESP32 board package: `esp32:esp32@2.0.14`
 - ESP8266 board package: `esp8266:esp8266@3.1.2`
-- UNO R4 board package: `arduino:renesas_uno@1.2.2`
+- UNO R4 board package: `arduino:renesas_uno@1.2.2` (Arduino IDE, not CI)
 
 ---
 
