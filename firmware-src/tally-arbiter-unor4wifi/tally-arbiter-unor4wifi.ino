@@ -230,7 +230,7 @@ bool wsConnect() {
   }
   if (resp.indexOf("101") < 0) { addLog("WS handshake failed"); wsClient.stop(); return false; }
   addLog("WS connected");
-  wsPayLoad = ""; wsPayLen = 0; wsPayRead = 0; wsInFrame = false;
+  wsPayload = ""; wsPayLen = 0; wsPayRead = 0; wsInFrame = false;
   return true;
 }
 
@@ -484,7 +484,7 @@ void setup() {
   // Save compiled-in values before EEPROM may overwrite
   String compiledSSID = networkSSID, compiledPass = networkPass, compiledHost = tallyarbiter_host;
 
-  EEPROM.begin(EE_SIZE);
+  EEPROM.begin();
   bool hadSaved = loadConfig();
 
   bool compiledIsReal = compiledSSID.length() > 0 && !compiledSSID.startsWith("TALLY_");
