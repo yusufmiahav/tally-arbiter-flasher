@@ -1,23 +1,44 @@
+/*
+ * ════════════════════════════════════════════════════════════════
+ *  TALLY ARBITER — Arduino UNO R4 WiFi Listener
+ *  https://github.com/josephdadams/TallyArbiter
+ *
+ *  Credit: Tally Arbiter by Joseph Adams
+ *          https://github.com/josephdadams/TallyArbiter
+ * ════════════════════════════════════════════════════════════════
+ *
+ *  SETUP INSTRUCTIONS:
+ *  1. Edit the lines marked "← EDIT" below with your details
+ *  2. In Arduino IDE: Tools → Board → Arduino UNO R4 WiFi
+ *  3. Tools → Port → select your board's port
+ *  4. Click Upload
+ *
+ *  After uploading the LED matrix scrolls your WiFi name while
+ *  connecting, then shows the device IP. Browse to that IP to
+ *  change settings any time without re-uploading.
+ *
+ *  REQUIRED LIBRARIES (install via Library Manager):
+ *    - ArduinoJson  (v6.x)
+ *    - ArduinoGraphics
+ *    - Arduino_LED_Matrix  (bundled with UNO R4 board package)
+ *
+ * ════════════════════════════════════════════════════════════════
+ */
+
 // ArduinoGraphics MUST be included before Arduino_LED_Matrix
-// v2.0.1 — built-in WebSocket client, no external library required
 #include "ArduinoGraphics.h"
 #include "Arduino_LED_Matrix.h"
 #include <WiFiS3.h>
 #include <ArduinoJson.h>
 #include <EEPROM.h>
 
-/* ════════════════════════════════════════
-   TALLY ARBITER — Arduino UNO R4 WiFi
-   Minimal Socket.IO v2 client over raw TCP
-   12×8 red LED matrix display
-   ════════════════════════════════════════ */
-
-/* ── Placeholders — patched by web flasher ── */
-String networkSSID        = "TALLY_SSID_PLACEHOLDER_00000000000000000000000000000000";
-String networkPass        = "TALLY_PASS_PLACEHOLDER_00000000000000000000000000000000";
-String tallyarbiter_host  = "TALLY_HOST_PLACEHOLDER_000000000000000";
-int    tallyarbiter_port  = 4455;
-String listenerDeviceName = "TALLY_NAME_PLACEHOLDER_000000000000000";
+/* ── EDIT THESE LINES ─────────────────────────────────── */
+String networkSSID        = "";        // ← EDIT: your 2.4GHz WiFi name
+String networkPass        = "";        // ← EDIT: your WiFi password
+String tallyarbiter_host  = "";        // ← EDIT: Tally Arbiter server IP
+int    tallyarbiter_port  = 4455;      // ← EDIT: TA port (usually 4455)
+String listenerDeviceName = "";        // ← EDIT: leave blank to auto-name from MAC
+/* ───────────────────────────────────────────────────────── */
 
 /* ── Runtime state ── */
 ArduinoLEDMatrix matrix;
@@ -487,7 +508,7 @@ void setup() {
   EEPROM.begin();
   bool hadSaved = loadConfig();
 
-  bool compiledIsReal = compiledSSID.length() > 0 && !compiledSSID.startsWith("TALLY_");
+  bool compiledIsReal = compiledSSID.length() > 0;
   if (compiledIsReal) {
     networkSSID = compiledSSID; networkPass = compiledPass; tallyarbiter_host = compiledHost;
     saveConfig();
@@ -496,7 +517,7 @@ void setup() {
 
   byte mac[6]; WiFi.macAddress(mac);
   char suf[7]; snprintf(suf, 7, "%02x%02x%02x", mac[3], mac[4], mac[5]);
-  if (listenerDeviceName.startsWith("TALLY_") || listenerDeviceName.length() == 0)
+  if (listenerDeviceName.length() == 0)
     listenerDeviceName = String("unor4-") + suf;
 
   Serial.println("=== Tally Arbiter UNO R4 WiFi ===");
@@ -507,10 +528,10 @@ void setup() {
   Serial.println("Device ID: " + DeviceId);
   Serial.println("=================================");
 
-  bool hasConfig = networkSSID.length() > 0 && !networkSSID.startsWith("TALLY_");
+  bool hasConfig = networkSSID.length() > 0;
   if (!hasConfig) {
     while (true) { matrixScroll(" NO CONFIG  CONNECT USB ", 50); checkSerialConfig();
-      if (networkSSID.length() > 0 && !networkSSID.startsWith("TALLY_")) break; }
+      if (networkSSID.length() > 0) break; }
   }
 
   WiFi.begin(networkSSID.c_str(), networkPass.c_str());
