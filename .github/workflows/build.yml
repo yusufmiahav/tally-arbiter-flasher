@@ -124,7 +124,6 @@ jobs:
 
       - name: Install libraries
         run: |
-          arduino-cli lib install "WebSockets@2.4.1"
           arduino-cli lib install "ArduinoJson@6.21.3"
           arduino-cli lib install "ArduinoGraphics"
 
@@ -132,7 +131,6 @@ jobs:
         run: |
           arduino-cli compile \
             --fqbn arduino:renesas_uno:unor4wifi \
-            --build-property "build.extra_flags=-DWEBSOCKETS_NETWORK_TYPE=NETWORK_GENERIC" \
             --output-dir ./build-unor4wifi \
             ./firmware-src/tally-arbiter-unor4wifi
 
