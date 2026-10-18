@@ -350,6 +350,24 @@ void doRegister() {
   addLog("Registered: " + listenerDeviceName);
 }
 
+// Parse a TA payload keeping only the fields we read. TA sends every
+// field of every device, which won't fit in the R4's 32 KB of RAM.
+DeserializationError parseTA(JsonDocument& doc, const char* json, size_t len, const char* kind) {
+  StaticJsonDocument<192> filter;
+  if (!strcmp(kind, "bus_options")) {
+    filter[0]["id"] = true; filter[0]["type"] = true;
+  } else if (!strcmp(kind, "devices")) {
+    filter[0]["id"] = true; filter[0]["name"] = true;
+  } else {
+    filter[0]["busId"] = true; filter[0]["deviceId"] = true;
+    filter[0]["sources"][0]["sourceId"] = true;
+  }
+  doc.clear();
+  DeserializationError e = deserializeJson(doc, json, len, DeserializationOption::Filter(filter));
+  if (e) addLog(String(kind) + " ERR: " + e.c_str());
+  return e;
+}
+
 void handleSIOMessage(const String& raw) {
   // EIO packet types: 0=open, 2=ping, 3=pong, 4x=message
   if (raw == EIO_PING) { wsSend(EIO_PONG); return; }
@@ -365,22 +383,21 @@ void handleSIOMessage(const String& raw) {
 
   int ps = raw.indexOf(',', ne);
   if (ps < 0) return;
-  String payloadStr = raw.substring(ps + 1);
-  if (payloadStr.endsWith("]")) payloadStr.remove(payloadStr.length() - 1);
-  payloadStr.trim();
+  // Parse in place rather than copying the payload into another String
+  int pe = raw.lastIndexOf(']');
+  if (pe <= ps) pe = raw.length();
+  const char* json = raw.c_str() + ps + 1;
+  size_t jsonLen = pe - (ps + 1);
 
   if (event == "bus_options") {
-    BusOptions.clear();
-    if (!deserializeJson(BusOptions, payloadStr))
+    if (!parseTA(BusOptions, json, jsonLen, "bus_options"))
       addLog("bus_options OK (" + String(BusOptions.as<JsonArray>().size()) + ")");
 
   } else if (event == "devices") {
-    Devices.clear();
-    if (!deserializeJson(Devices, payloadStr)) SetDeviceName();
+    if (!parseTA(Devices, json, jsonLen, "devices")) SetDeviceName();
 
   } else if (event == "device_states") {
-    DeviceStates.clear();
-    if (!deserializeJson(DeviceStates, payloadStr)) processTallyData();
+    if (!parseTA(DeviceStates, json, jsonLen, "device_states")) processTallyData();
 
   } else if (event == "reassign") {
     // ["reassign","oldId","newId","listenerId"]
@@ -392,9 +409,19 @@ void handleSIOMessage(const String& raw) {
       pos = qe + 1;
     }
     if (found >= 3) {
+      String oldId = tokens[1];
       DeviceId = tokens[2];
       saveConfig();
       addLog("Reassign -> " + DeviceId);
+      // Tell TA we've switched so it moves us to the new camera's updates —
+      // without this the server keeps sending the old camera's states
+      sioEmit("listener_reassign_object",
+              "{\"oldDeviceId\":\"" + oldId + "\",\"newDeviceId\":\"" + DeviceId + "\"}");
+      sioEmit("devices");
+      // Old camera's states no longer apply — clear until TA sends new ones
+      DeviceStates.clear();
+      mode_preview = false;
+      mode_program = false;
       String nm = "UNKNOWN";
       for (JsonObject d : Devices.as<JsonArray>())
         if (d["id"].as<String>() == DeviceId) { nm = d["name"].as<String>(); break; }

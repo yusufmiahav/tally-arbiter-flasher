@@ -304,6 +304,25 @@ void doRegister() {
   ws_emit("listenerclient_connect", payload.c_str());
 }
 
+// Parse a TA payload keeping only the fields we read. TA sends every
+// field of every device, which overflows the documents and the ESP8266's
+// small heap when a reassign triggers a full "devices" refresh.
+DeserializationError parseTA(JsonDocument& doc, const char* json, size_t len, const char* kind) {
+  StaticJsonDocument<192> filter;
+  if (!strcmp(kind, "bus_options")) {
+    filter[0]["id"] = true; filter[0]["type"] = true;
+  } else if (!strcmp(kind, "devices")) {
+    filter[0]["id"] = true; filter[0]["name"] = true;
+  } else {
+    filter[0]["busId"] = true; filter[0]["deviceId"] = true;
+    filter[0]["sources"][0]["sourceId"] = true;
+  }
+  doc.clear();
+  DeserializationError e = deserializeJson(doc, json, len, DeserializationOption::Filter(filter));
+  if (e) addLog(String(kind) + " ERR: " + e.c_str());
+  return e;
+}
+
 void socketEvent(socketIOmessageType_t type, uint8_t* payload, size_t length) {
   switch (type) {
 
@@ -342,32 +361,24 @@ void socketEvent(socketIOmessageType_t type, uint8_t* payload, size_t length) {
       // Trim the trailing ] from the Socket.IO envelope
       int payloadEnd = data.lastIndexOf(']');
       if (payloadEnd <= payloadStart) break;
-      String payloadStr = data.substring(payloadStart, payloadEnd);
-      payloadStr.trim();
+      // Parse in place — a second copy of a large payload can exhaust the heap
+      const char* json = data.c_str() + payloadStart;
+      size_t jsonLen = payloadEnd - payloadStart;
 
       // ── bus_options ──
       if (event == "bus_options") {
-        BusOptions.clear();
-        DeserializationError e = deserializeJson(BusOptions, payloadStr);
-        if (!e) addLog("bus_options OK (" + String(BusOptions.as<JsonArray>().size()) + ")");
-        else    addLog("bus_options ERR: " + String(e.c_str()));
+        if (!parseTA(BusOptions, json, jsonLen, "bus_options"))
+          addLog("bus_options OK (" + String(BusOptions.as<JsonArray>().size()) + ")");
 
       // ── devices ──
       } else if (event == "devices") {
-        Devices.clear();
-        DeserializationError e = deserializeJson(Devices, payloadStr);
-        if (!e) { SetDeviceName(); }
-        else    addLog("devices ERR: " + String(e.c_str()));
+        if (!parseTA(Devices, json, jsonLen, "devices")) SetDeviceName();
 
       // ── device_states ──
       } else if (event == "device_states") {
-        DeviceStates.clear();
-        DeserializationError e = deserializeJson(DeviceStates, payloadStr);
-        if (!e) {
+        if (!parseTA(DeviceStates, json, jsonLen, "device_states")) {
           addLog("device_states OK (" + String(DeviceStates.as<JsonArray>().size()) + ")");
           processTallyData();
-        } else {
-          addLog("device_states ERR: " + String(e.c_str()));
         }
 
       // ── reassign ──
@@ -395,6 +406,11 @@ void socketEvent(socketIOmessageType_t type, uint8_t* payload, size_t length) {
           addLog("Reassign: " + oldId + " -> " + newId);
           DeviceId = newId;
           saveConfig();
+          // Old camera's states no longer apply — clear until TA sends new ones
+          DeviceStates.clear();
+          mode_preview = false;
+          mode_program = false;
+          evaluateMode();
           String rPayload = "{"
             "\"oldDeviceId\":\"" + oldId + "\","
             "\"newDeviceId\":\"" + newId + "\""
