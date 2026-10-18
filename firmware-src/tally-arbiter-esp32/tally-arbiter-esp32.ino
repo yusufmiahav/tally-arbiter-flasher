@@ -265,6 +265,31 @@ void socket_Reassign(const String& payload) {
   preferences.putString("deviceid", newId);
   preferences.end();
   SetDeviceName();
+
+  // The stored states belong to the old camera — drop them until TA
+  // sends states for the new one, so the light doesn't stick
+  DeviceStates.clear();
+  mode_preview = false;
+  mode_program = false;
+  evaluateMode();
+}
+
+// Parse a TA payload keeping only the fields we read. TA sends every
+// field of every device, which can overflow the documents on big shows.
+DeserializationError parseTA(JsonDocument& doc, const char* json, size_t len, const char* kind) {
+  StaticJsonDocument<192> filter;
+  if (!strcmp(kind, "bus_options")) {
+    filter[0]["id"] = true; filter[0]["type"] = true;
+  } else if (!strcmp(kind, "devices")) {
+    filter[0]["id"] = true; filter[0]["name"] = true;
+  } else {
+    filter[0]["busId"] = true; filter[0]["deviceId"] = true;
+    filter[0]["sources"][0]["sourceId"] = true;
+  }
+  doc.clear();
+  DeserializationError e = deserializeJson(doc, json, len, DeserializationOption::Filter(filter));
+  if (e) addLog(String(kind) + " ERR: " + e.c_str());
+  return e;
 }
 
 void socket_event(socketIOmessageType_t type, uint8_t* payload, size_t length) {
@@ -288,28 +313,27 @@ void socket_event(socketIOmessageType_t type, uint8_t* payload, size_t length) {
       int ne = msg.indexOf('"', ns);
       if (ns <= 0 || ne <= ns) break;
       String evtType = msg.substring(ns, ne);
-      String content = msg.substring(ne + 2);
-      if (content.endsWith("]")) content.remove(content.length() - 1);
+      // Payload sits between the comma after the event name and the closing ]
+      int ps = ne + 2;
+      int pe = msg.lastIndexOf(']');
+      if (pe < ps) pe = msg.length();
+      const char* json = msg.c_str() + ps;
+      size_t jsonLen = pe - ps;
 
       addLog("RX: " + evtType);
 
       if (evtType == "bus_options") {
-        BusOptions.clear();
-        auto e = deserializeJson(BusOptions, content);
-        if (e) addLog("bus_options ERR: " + String(e.c_str()));
-        else addLog("bus_options OK (" + String(BusOptions.as<JsonArray>().size()) + ")");
+        if (!parseTA(BusOptions, json, jsonLen, "bus_options"))
+          addLog("bus_options OK (" + String(BusOptions.as<JsonArray>().size()) + ")");
 
       } else if (evtType == "devices") {
-        Devices.clear();
-        auto e = deserializeJson(Devices, content);
-        if (!e) SetDeviceName();
+        if (!parseTA(Devices, json, jsonLen, "devices")) SetDeviceName();
 
       } else if (evtType == "device_states") {
-        DeviceStates.clear();
-        auto e = deserializeJson(DeviceStates, content);
-        if (!e) processTallyData();
+        if (!parseTA(DeviceStates, json, jsonLen, "device_states")) processTallyData();
 
       } else if (evtType == "deviceId") {
+        String content = msg.substring(ps, pe);
         DeviceId = strip_quot(content);
         addLog("deviceId: " + DeviceId);
         preferences.begin("tally-arbiter", false);
@@ -318,7 +342,7 @@ void socket_event(socketIOmessageType_t type, uint8_t* payload, size_t length) {
         SetDeviceName();
 
       } else if (evtType == "reassign") {
-        socket_Reassign(content);
+        socket_Reassign(msg.substring(ps, pe));
 
       } else if (evtType == "flash") {
         socket_Flash();

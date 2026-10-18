@@ -1253,7 +1253,7 @@ async function listenForConfirmation(cfg) {
 //  DO SEND CONFIG
 //  Always requests a fresh port — no reuse.
 //  ESP8266: open → DTR reset → wait 2.5s → send → optimistic proceed
-//  ESP32:   open → send → wait for CFG saved echo
+//  ESP32:   open → wait for app banner → send (with retries) → wait for CFG saved echo
 // ─────────────────────────────────────
 async function doSendConfig() {
   var cfg = savedCfg || getConfig();
@@ -1271,33 +1271,53 @@ async function doSendConfig() {
     cfgLog('Port open.', 'ok');
 
     if (cfg.board !== 'esp8266') {
-      // ESP32: open port, wait for device to boot (EN/RST), then send immediately
-      // The serial buffer is cleared on reset so we must send AFTER boot
+      // ESP32: open port, wait for the user to press EN/RST, then send once the app is up
       cfgLog('Press EN/RST on the ESP32 now — sending config on boot...', 'warn');
       setSCStatus('Press EN/RST on the device!', 'warn');
 
       var reader = port.readable.getReader();
       var writer = port.writable.getWriter();
-      var buf = '', sent = false, deadline = Date.now() + 15000;
+      var dec = new TextDecoder();
+      var buf = '', sent = 0, firstOutputAt = 0, lastSendAt = 0, garbleWarned = false;
+      var deadline = Date.now() + 15000;
+      var cmdBytes = new TextEncoder().encode(buildCFGPacket(cfg));
+      var confirmed = function(){ return buf.indexOf('CFG saved') >= 0 || buf.indexOf('Rebooting') >= 0; };
+      // The firmware only reads serial once setup() has run (after the ROM
+      // bootloader output), so anything sent on the first boot bytes is lost.
+      // Wait for the app's banner, or fall back to sending ~2.5s after boot,
+      // and resend every 2.5s until the device confirms.
+      var appReady = function(){ return /Tally Arbiter|={10,}|Device ID|Waiting for CFG|WiFi/.test(buf); };
 
-      while (Date.now() < deadline) {
-        var r = await Promise.race([reader.read(), delay(100).then(function(){ return {value:null}; })]);
-        if (r.value) {
-          var txt = new TextDecoder().decode(r.value); buf += txt;
-          txt.split('\n').forEach(function(l){ if(l.trim()) cfgLog('← '+l.trim(), 'dim'); });
+      var pending = null; // keep one in-flight read so no chunk is dropped on timeout
+      while (Date.now() < deadline && !confirmed()) {
+        if (!pending) pending = reader.read();
+        var r = await Promise.race([pending, delay(100).then(function(){ return null; })]);
+        if (r) pending = null;
+        if (r && r.done) break;
+        if (r && r.value) {
+          if (!firstOutputAt) firstOutputAt = Date.now();
+          var txt = dec.decode(r.value, { stream: true }); buf += txt;
+          txt.split('\n').forEach(function(l){ if(l.trim()) cfgLog('← '+l.trim(), l.indexOf('CFG')>=0?'ok':'dim'); });
+        }
 
-          // Device is booting — send config as soon as we see any output
-          if (!sent && buf.length > 10) {
-            sent = true;
-            var cmd = buildCFGPacket(cfg);
-            cfgLog('→ Device booting — sending ' + cmd.length + ' bytes now...', 'info');
-            await writer.write(new TextEncoder().encode(cmd));
-            await writer.ready;
-            setSCStatus('Config sent — waiting for confirmation...', 'warn');
-            deadline = Date.now() + 6000; // reset deadline for confirmation
+        // Unreadable output at 115200 = device isn't running this firmware
+        if (!garbleWarned && buf.length > 200 && !appReady()) {
+          var bad = (buf.match(/[\uFFFD\x00-\x08\x0E-\x1F]/g) || []).length;
+          if (bad / buf.length > 0.2) {
+            garbleWarned = true;
+            cfgLog('⚠ Device output is unreadable at 115200 baud — the Tally Arbiter firmware is not running (boot loop, wrong board type, or failed flash).', 'error');
+            cfgLog('  Check the "Chip:" line in the flash log matches the board you picked, then use Erase + Flash Fresh.', 'warn');
           }
+        }
 
-          if (sent && (buf.indexOf('CFG saved') >= 0 || buf.indexOf('Rebooting') >= 0)) break;
+        var now = Date.now();
+        var due = firstOutputAt && (appReady() || now - firstOutputAt > 2500);
+        if (due && (!sent || now - lastSendAt > 2500) && sent < 4) {
+          sent++; lastSendAt = now;
+          cfgLog('→ Sending config (' + cmdBytes.length + ' bytes)' + (sent > 1 ? ' — retry ' + (sent - 1) : '') + '...', 'info');
+          await writer.write(cmdBytes);
+          setSCStatus('Config sent — waiting for confirmation...', 'warn');
+          deadline = Math.max(deadline, now + 6000);
         }
       }
 
@@ -1306,7 +1326,7 @@ async function doSendConfig() {
       try { reader.releaseLock(); } catch(_) {}
       try { await port.close(); } catch(_) {}
 
-      if (buf.indexOf('CFG saved') >= 0 || buf.indexOf('Rebooting') >= 0) {
+      if (confirmed()) {
         setSCStatus('✓ Config saved!', 'ok');
         cfgLog('✓ Confirmed. Device rebooting.', 'ok');
         setTimeout(function(){ goToDone(cfg); }, 1200);
@@ -1315,8 +1335,8 @@ async function doSendConfig() {
         cfgLog('No output from device in 15s. Press EN/RST and try again.', 'warn');
         btn.disabled = false;
       } else {
-        setSCStatus('No confirmation — try again.', 'error');
-        cfgLog('No confirmation. Press EN/RST then click Send Config again.', 'warn');
+        setSCStatus(garbleWarned ? 'Device firmware not running — reflash.' : 'No confirmation — try again.', 'error');
+        cfgLog(garbleWarned ? 'No confirmation — device output was unreadable. Reflash (Erase + Flash Fresh) before sending config.' : 'No confirmation. Press EN/RST then click Send Config again.', 'warn');
         btn.disabled = false;
       }
       return;
